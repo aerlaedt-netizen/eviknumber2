@@ -280,85 +280,98 @@
     const submitBtn = document.getElementById('submitBtn');
     const errorBox = document.getElementById('error');
 
-    // ===== ЖЁСТКИЙ ПРЕФИКС + КУРСОР ВСЕГДА В КОНЕЦ =====
+    // ===== Телефон: +7 (9... + удаление цифр (а не скобок/дефисов) + курсор в конец =====
     const PHONE_PREFIX = "+7 (9";
+    let phoneAfterDigits = ""; // 0..9 цифр ПОСЛЕ "79"
 
-    function moveCaretToEnd(){
-      // Делать через rAF — так надёжнее в мобильных WebView
+    function moveCaretToEnd() {
       requestAnimationFrame(() => {
         const end = phoneEl.value.length;
         phoneEl.setSelectionRange(end, end);
       });
     }
 
-    function formatPhoneDigits(digitsAfterPrefix){
-      // После "+7 (9" остаётся 9 цифр (чтобы суммарно было 79XXXXXXXXX)
-      const d = (digitsAfterPrefix || "").replace(/\D/g, "").slice(0, 9);
+    function formatPhoneDigits(after) {
+      const d = (after || "").replace(/\D/g, "").slice(0, 9);
+      const a = d.slice(0, 2);  // чтобы получить 9XX
+      const b = d.slice(2, 5);
+      const c = d.slice(5, 7);
+      const e = d.slice(7, 9);
 
-      const a = d.slice(0, 2);  // дополняем "9" до 9XX
-      const b = d.slice(2, 5);  // XXX
-      const c = d.slice(5, 7);  // XX
-      const e = d.slice(7, 9);  // XX
-
+      // ВАЖНО: пока не введены 2 цифры после 9 — скобку не закрываем
       let s = PHONE_PREFIX;
-      if (a.length) s += a;
-      s += ")";
+      if (a.length === 0) return s;
+      if (a.length === 1) return s + a;
 
+      s += a + ")";
       if (b.length) s += " " + b;
       if (c.length) s += "-" + c;
       if (e.length) s += "-" + e;
-
       return s;
     }
 
-    function ensurePhonePrefix(){
-      const v = phoneEl.value || "";
-      if (!v.startsWith(PHONE_PREFIX)) phoneEl.value = PHONE_PREFIX;
-    }
-
-    function initPhone(){
-      if (!phoneEl.value) phoneEl.value = PHONE_PREFIX;
-      ensurePhonePrefix();
+    function renderPhone() {
+      phoneEl.value = formatPhoneDigits(phoneAfterDigits);
+      // защита префикса
+      if (!phoneEl.value.startsWith(PHONE_PREFIX)) phoneEl.value = PHONE_PREFIX;
       moveCaretToEnd();
     }
 
-    // Любой клик/тап по полю телефона — курсор в конец
+    function parseAfterDigitsFromValue(v) {
+      const digits = (v || "").replace(/\D/g, "");
+      // приводим к виду 79XXXXXXXXX
+      let after = "";
+      if (digits.startsWith("79")) after = digits.slice(2);
+      else if (digits.startsWith("7")) after = digits.slice(1);
+      else after = digits;
+      return after.slice(0, 9);
+    }
+
+    function initPhone() {
+      phoneAfterDigits = phoneAfterDigits || "";
+      renderPhone();
+    }
+
+    // курсор всегда в конец
     ["focus", "click", "mouseup", "touchend"].forEach(evt => {
-      phoneEl.addEventListener(evt, () => initPhone());
+      phoneEl.addEventListener(evt, () => {
+        if (!phoneEl.value || !phoneEl.value.startsWith(PHONE_PREFIX)) {
+          phoneAfterDigits = "";
+          renderPhone();
+        } else {
+          moveCaretToEnd();
+        }
+      });
     });
 
-    // Запрет удалять/редактировать в префиксе
+    // Backspace: удаляем ПОСЛЕДНЮЮ ЦИФРУ, а не символ форматирования
     phoneEl.addEventListener("keydown", (e) => {
-      const pos = phoneEl.selectionStart ?? 0;
-      if ((e.key === "Backspace" || e.key === "Delete") && pos <= PHONE_PREFIX.length) {
+      if (e.key === "Backspace") {
         e.preventDefault();
-        phoneEl.value = PHONE_PREFIX;
+
+        // если уже пусто (только префикс) — ничего не делаем
+        if (phoneAfterDigits.length === 0) {
+          phoneEl.value = PHONE_PREFIX;
+          moveCaretToEnd();
+          return;
+        }
+
+        phoneAfterDigits = phoneAfterDigits.slice(0, -1);
+        renderPhone();
+        return;
+      }
+
+      // запрещаем увести курсор/редактировать префикс (на всякий случай)
+      if (e.key === "ArrowLeft" || e.key === "Home") {
+        e.preventDefault();
         moveCaretToEnd();
       }
     });
 
-    phoneEl.addEventListener("beforeinput", (e) => {
-      // Если пытаются вставить/ввести не в конце — всегда перекидываем в конец
-      // (не везде поддерживается, но где есть — помогает)
-      try {
-        const pos = phoneEl.selectionStart ?? 0;
-        if (pos < phoneEl.value.length) {
-          moveCaretToEnd();
-        }
-      } catch (_) {}
-    });
-
-    // Форматирование при любом вводе + курсор в конец
+    // Любой ввод/вставка: парсим цифры и перерисовываем
     phoneEl.addEventListener("input", () => {
-      const digits = (phoneEl.value || "").replace(/\D/g, "");
-      let after = "";
-
-      if (digits.startsWith("79")) after = digits.slice(2);
-      else if (digits.startsWith("7")) after = digits.slice(1);
-      else after = digits;
-
-      phoneEl.value = formatPhoneDigits(after);
-      moveCaretToEnd();
+      phoneAfterDigits = parseAfterDigitsFromValue(phoneEl.value);
+      renderPhone();
     });
 
     function showSection(which){
@@ -381,7 +394,8 @@
       addressEl.value = '';
       carBrandEl.value = '';
       geoEl.value = '';
-      phoneEl.value = PHONE_PREFIX; // префикс всегда есть
+      phoneAfterDigits = "";
+      phoneEl.value = PHONE_PREFIX;
       clearError();
     }
 
@@ -440,11 +454,11 @@
     submitBtn.addEventListener('click', () => {
       clearError();
 
-      const phoneDigits = phoneEl.value.replace(/\D/g, ""); // 79XXXXXXXXX
+      const phoneDigits = ("79" + phoneAfterDigits).replace(/\D/g, ""); // 79XXXXXXXXX
 
       const payload = {
         type: "evac_min",
-        phone: phoneDigits,
+        phone: phoneDigits,                // чистые цифры
         phoneFormatted: phoneEl.value.trim(),
         carBrand: carBrandEl.value.trim() || null,
         address: addressEl.value.trim() || null,
