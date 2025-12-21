@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Mini App</title>
+  <script src="https://telegram.org/js/telegram-web-app.js"></script>
+</head>
+<body>
+  <h3>Отправка данных в бота</h3>
+
+  <label>Имя</label><br/>
+  <input id="name" placeholder="Введите имя" /><br/><br/>
+
+  <label>Сообщение</label><br/>
+  <textarea id="msg" placeholder="Введите текст"></textarea><br/><br/>
+
+  <button id="send">Отправить</button>
+
+  <script>
+    const tg = window.Telegram.WebApp;
+    tg.ready();
+
+    document.getElementById("send").addEventListener("click", () => {
+      const payload = {
+        name: document.getElementById("name").value.trim(),
+        message: document.getElementById("msg").value.trim(),
+        // можно добавить что угодно
+        ts: Date.now()
+      };
+
+      // Отправка данных в бота (придёт как message.web_app_data.data)
+      tg.sendData(JSON.stringify(payload));
+
+      // (необязательно) закрыть мини‑апп
+      tg.close();
+    });
+  </script>
+</body>
+</html>
