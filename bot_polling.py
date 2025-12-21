@@ -12,6 +12,9 @@ WEBAPP_URL = os.getenv("WEBAPP_URL")  # https://aerlaedt-netizen.github.io/evikn
 
 dp = Dispatcher()
 
+# Храним, кому уже показывали приветствие (до перезапуска процесса)
+greeted_users: set[int] = set()
+
 
 def _dt(ts_ms: int | None) -> str:
     if not ts_ms:
@@ -50,13 +53,23 @@ async def start(message: Message):
         await message.answer("WEBAPP_URL не задан в переменных окружения.")
         return
 
+    uid = message.from_user.id
+
+    # Приветствие только при первом /start (до перезапуска бота)
+    if uid not in greeted_users:
+        greeted_users.add(uid)
+        await message.answer(
+            "Здравствуйте! Это бот для приёма заявок на эвакуатор.\n"
+            "Нажмите кнопку ниже, заполните форму — заявка придёт диспетчеру."
+        )
+
     kb = ReplyKeyboardMarkup(
         keyboard=[
             [KeyboardButton(text="Заказать эвакуатор", web_app=WebAppInfo(url=WEBAPP_URL))]
         ],
         resize_keyboard=True
     )
-    await message.answer("Нажмите кнопку и отправьте заявку из мини‑аппа.", reply_markup=kb)
+    await message.answer("Откройте мини‑апп и отправьте заявку.", reply_markup=kb)
 
 
 @dp.message(F.web_app_data)
@@ -67,7 +80,9 @@ async def webapp_data_handler(message: Message):
     except Exception:
         data = {"raw": raw}
 
-    phone = _clean(data.get("phone"))
+    # Под твой payload:
+    # {type:"evac_min", phone, phoneFormatted, carBrand, address, geo, ts}
+    phone = _clean(data.get("phoneFormatted") or data.get("phone"))
     address = _clean(data.get("address"))
     car_brand = _clean(data.get("carBrand"))
     geo = _clean(data.get("geo"))
