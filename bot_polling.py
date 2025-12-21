@@ -29,9 +29,7 @@ def _clean(s: str | None) -> str:
 
 
 def _maps_link_from_geo(geo_text: str | None) -> str | None:
-    """
-    geo_text ожидаем вида: "55.7558, 37.6173"
-    """
+    # ожидаем "55.7558, 37.6173"
     if not geo_text:
         return None
     t = geo_text.replace(" ", "")
@@ -39,7 +37,8 @@ def _maps_link_from_geo(geo_text: str | None) -> str | None:
         return None
     lat, lon = t.split(",", 1)
     try:
-        float(lat); float(lon)
+        float(lat)
+        float(lon)
     except Exception:
         return None
     return f"https://maps.google.com/?q={lat},{lon}"
@@ -52,7 +51,9 @@ async def start(message: Message):
         return
 
     kb = ReplyKeyboardMarkup(
-        keyboard=[[KeyboardButton(text=Заказать эвакуатор, web_app=WebAppInfo(url=WEBAPP_URL))]],
+        keyboard=[
+            [KeyboardButton(text="Заказать эвакуатор", web_app=WebAppInfo(url=WEBAPP_URL))]
+        ],
         resize_keyboard=True
     )
     await message.answer("Нажмите кнопку и отправьте заявку из мини‑аппа.", reply_markup=kb)
@@ -66,8 +67,6 @@ async def webapp_data_handler(message: Message):
     except Exception:
         data = {"raw": raw}
 
-    # Под твой текущий payload:
-    # {type:"evac_min", phone, address, carBrand, geo, ts}
     phone = _clean(data.get("phone"))
     address = _clean(data.get("address"))
     car_brand = _clean(data.get("carBrand"))
@@ -77,10 +76,14 @@ async def webapp_data_handler(message: Message):
     maps_link = _maps_link_from_geo(data.get("geo"))
 
     sender = message.from_user
-    sender_line = f"{sender.full_name} (id={sender.id}" + (f", @{sender.username}" if sender.username else "") + ")"
+    sender_line = (
+        f"{sender.full_name} (id={sender.id}"
+        + (f", @{sender.username}" if sender.username else "")
+        + ")"
+    )
 
     lines = [
-        "🛻 Заявка на эвакуатор",
+        "Заявка на эвакуатор",
         f"Время: {_dt(ts)}",
         f"Клиент: {sender_line}",
         "",
@@ -94,14 +97,8 @@ async def webapp_data_handler(message: Message):
 
     text = "\n".join(lines)
 
-    # Отправляем тебе в ЛС
-    try:
-        await message.bot.send_message(TARGET_USER_ID, text)
-        await message.answer("Заявка отправлена диспетчеру.")
-    except Exception as e:
-        await message.answer("Не смог отправить диспетчеру. Он точно нажал /start у бота?")
-        # чтобы видеть ошибку в логах Render:
-        raise
+    await message.bot.send_message(TARGET_USER_ID, text)
+    await message.answer("Заявка отправлена.")
 
 
 async def main():
