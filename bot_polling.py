@@ -60,7 +60,7 @@ def _yandex_maps_link_from_geo(geo_text: str | None) -> str | None:
 
 
 @dp.message(F.text == "/start")
-async def start(message: Message):
+async def start(message: Message) -> None:
     if not WEBAPP_URL:
         await message.answer("WEBAPP_URL не задан в переменных окружения.")
         return
@@ -79,13 +79,13 @@ async def start(message: Message):
         keyboard=[
             [KeyboardButton(text="Заказать эвакуатор", web_app=WebAppInfo(url=WEBAPP_URL))]
         ],
-        resize_keyboard=True
+        resize_keyboard=True,
     )
     await message.answer("Откройте мини‑апп и отправьте заявку.", reply_markup=kb)
 
 
 @dp.message(F.web_app_data)
-async def webapp_data_handler(message: Message):
+async def webapp_data_handler(message: Message) -> None:
     uid = message.from_user.id
     now = time.time()
 
@@ -107,7 +107,7 @@ async def webapp_data_handler(message: Message):
     except Exception:
         data = {"raw": raw}
 
-    # Под твой payload:
+    # payload:
     # {type:"evac_min", phone, phoneFormatted, carBrand, address, geo, ts}
     phone = _clean(data.get("phoneFormatted") or data.get("phone"))
     address = _clean(data.get("address"))
@@ -124,7 +124,7 @@ async def webapp_data_handler(message: Message):
         + ")"
     )
 
-   text_lines = [
+    text_lines = [
         "🚨 Заявка на эвакуатор 🚨",
         "",
         "",
@@ -145,14 +145,14 @@ async def webapp_data_handler(message: Message):
 
     text = "\n".join(lines)
 
-    # Сначала отправляем диспетчеру, потом фиксируем время (чтобы не блокировать из-за ошибок отправки)
+    # Сначала отправляем диспетчеру, потом фиксируем время
     await message.bot.send_message(TARGET_USER_ID, text)
 
     last_request_ts[uid] = now
     await message.answer("Заявка отправлена, ожидайте звонка диспетчера, обычно до 5 минут")
 
 
-async def main():
+async def main() -> None:
     if not BOT_TOKEN:
         raise RuntimeError("BOT_TOKEN не задан")
     if not TARGET_USER_ID:
