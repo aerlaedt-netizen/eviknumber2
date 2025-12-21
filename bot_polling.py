@@ -98,14 +98,14 @@ async def webapp_data_handler(message: Message):
     )
 
     lines = [
-        "Заявка на эвакуатор",
-        f"Время: {_dt(ts)}",
-        f"Клиент: {sender_line}",
+        "🚨 Заявка на эвакуатор",
+        f"⌛ Время: {_dt(ts)}",
+        f"👨‍💼 Клиент: {sender_line}",
         "",
-        f"Телефон: {phone}",
-        f"Марка: {car_brand}",
-        f"Адрес: {address}",
-        f"Гео: {geo}",
+        f"📱 Телефон: {phone}",
+        f"🚗 Марка: {car_brand}",
+        f"🗺️ Адрес: {address}",
+        f"🌍 Гео: {geo}",
     ]
     if maps_link:
         lines.append(f"Карта: {maps_link}")
@@ -113,7 +113,7 @@ async def webapp_data_handler(message: Message):
     text = "\n".join(lines)
 
     await message.bot.send_message(TARGET_USER_ID, text)
-    await message.answer("Заявка отправлена.")
+    await message.answer("Ваша заявка отправлена менеджеру, ожидайте обратного звонка.")
 
 
 async def main():
