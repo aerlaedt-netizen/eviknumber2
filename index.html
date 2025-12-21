@@ -172,7 +172,7 @@
         <!-- START -->
         <div id="startSection" class="section active">
           <h1>Вызов эвакуатора</h1>
-          <p>Нажмите «Заказать машину», укажите телефон и адрес (или геолокацию) — и заявка уйдёт диспетчеру.</p>
+          <p>Нажмите «Заказать машину», укажите телефон, марку и адрес (или геолокацию) — и заявка уйдёт диспетчеру.</p>
 
           <div class="actions">
             <button id="startOrderBtn" class="btn" type="button">Заказать машину</button>
@@ -181,10 +181,10 @@
           <div class="hint">Mini App в Telegram</div>
         </div>
 
-        <!-- FORM (МИНИМУМ + МАРКА) -->
+        <!-- FORM -->
         <div id="formSection" class="section">
           <h1>Заявка</h1>
-          <p>Минимум данных: телефон, адрес, марка авто.</p>
+          <p>Минимум данных: телефон + марка + адрес (или гео).</p>
 
           <div class="form">
             <div class="divider"></div>
@@ -192,17 +192,25 @@
             <div class="grid">
               <div>
                 <label for="phone">Телефон</label>
-                <input id="phone" type="tel" placeholder="+7 (999) 123-45-67" autocomplete="tel" inputmode="tel" />
-              </div>
-
-              <div>
-                <label for="address">Адрес (если удобно — текстом)</label>
-                <input id="address" type="text" placeholder="Город, улица, дом / ориентир" autocomplete="street-address" />
+                <input
+                  id="phone"
+                  type="tel"
+                  placeholder="+7 (9__ ) ___-__-__"
+                  autocomplete="tel"
+                  inputmode="numeric"
+                  maxlength="18"
+                />
+                <div class="hint" style="margin-top:8px">Формат: +7 (9XX) XXX-XX-XX</div>
               </div>
 
               <div>
                 <label for="carBrand">Марка автомобиля</label>
                 <input id="carBrand" type="text" placeholder="Например: Toyota" autocomplete="off" />
+              </div>
+
+              <div>
+                <label for="address">Адрес (если удобно — текстом)</label>
+                <input id="address" type="text" placeholder="Город, улица, дом / ориентир" autocomplete="street-address" />
               </div>
 
               <div class="row">
@@ -272,6 +280,87 @@
     const submitBtn = document.getElementById('submitBtn');
     const errorBox = document.getElementById('error');
 
+    // ===== ЖЁСТКИЙ ПРЕФИКС + КУРСОР ВСЕГДА В КОНЕЦ =====
+    const PHONE_PREFIX = "+7 (9";
+
+    function moveCaretToEnd(){
+      // Делать через rAF — так надёжнее в мобильных WebView
+      requestAnimationFrame(() => {
+        const end = phoneEl.value.length;
+        phoneEl.setSelectionRange(end, end);
+      });
+    }
+
+    function formatPhoneDigits(digitsAfterPrefix){
+      // После "+7 (9" остаётся 9 цифр (чтобы суммарно было 79XXXXXXXXX)
+      const d = (digitsAfterPrefix || "").replace(/\D/g, "").slice(0, 9);
+
+      const a = d.slice(0, 2);  // дополняем "9" до 9XX
+      const b = d.slice(2, 5);  // XXX
+      const c = d.slice(5, 7);  // XX
+      const e = d.slice(7, 9);  // XX
+
+      let s = PHONE_PREFIX;
+      if (a.length) s += a;
+      s += ")";
+
+      if (b.length) s += " " + b;
+      if (c.length) s += "-" + c;
+      if (e.length) s += "-" + e;
+
+      return s;
+    }
+
+    function ensurePhonePrefix(){
+      const v = phoneEl.value || "";
+      if (!v.startsWith(PHONE_PREFIX)) phoneEl.value = PHONE_PREFIX;
+    }
+
+    function initPhone(){
+      if (!phoneEl.value) phoneEl.value = PHONE_PREFIX;
+      ensurePhonePrefix();
+      moveCaretToEnd();
+    }
+
+    // Любой клик/тап по полю телефона — курсор в конец
+    ["focus", "click", "mouseup", "touchend"].forEach(evt => {
+      phoneEl.addEventListener(evt, () => initPhone());
+    });
+
+    // Запрет удалять/редактировать в префиксе
+    phoneEl.addEventListener("keydown", (e) => {
+      const pos = phoneEl.selectionStart ?? 0;
+      if ((e.key === "Backspace" || e.key === "Delete") && pos <= PHONE_PREFIX.length) {
+        e.preventDefault();
+        phoneEl.value = PHONE_PREFIX;
+        moveCaretToEnd();
+      }
+    });
+
+    phoneEl.addEventListener("beforeinput", (e) => {
+      // Если пытаются вставить/ввести не в конце — всегда перекидываем в конец
+      // (не везде поддерживается, но где есть — помогает)
+      try {
+        const pos = phoneEl.selectionStart ?? 0;
+        if (pos < phoneEl.value.length) {
+          moveCaretToEnd();
+        }
+      } catch (_) {}
+    });
+
+    // Форматирование при любом вводе + курсор в конец
+    phoneEl.addEventListener("input", () => {
+      const digits = (phoneEl.value || "").replace(/\D/g, "");
+      let after = "";
+
+      if (digits.startsWith("79")) after = digits.slice(2);
+      else if (digits.startsWith("7")) after = digits.slice(1);
+      else after = digits;
+
+      phoneEl.value = formatPhoneDigits(after);
+      moveCaretToEnd();
+    });
+
     function showSection(which){
       for (const el of [startSection, formSection, successSection]) el.classList.remove('active');
       which.classList.add('active');
@@ -292,13 +381,14 @@
       addressEl.value = '';
       carBrandEl.value = '';
       geoEl.value = '';
-      phoneEl.value = '';
+      phoneEl.value = PHONE_PREFIX; // префикс всегда есть
       clearError();
     }
 
     // Navigation
     startOrderBtn.addEventListener('click', () => {
       showSection(formSection);
+      initPhone();
       phoneEl.focus();
     });
 
@@ -310,6 +400,7 @@
     newOrderBtn.addEventListener('click', () => {
       resetForm();
       showSection(formSection);
+      initPhone();
       phoneEl.focus();
     });
 
@@ -345,25 +436,31 @@
       );
     });
 
-    // Submit (МИНИМУМ ДАННЫХ В БОТА + МАРКА)
+    // Submit
     submitBtn.addEventListener('click', () => {
       clearError();
 
+      const phoneDigits = phoneEl.value.replace(/\D/g, ""); // 79XXXXXXXXX
+
       const payload = {
         type: "evac_min",
-        phone: phoneEl.value.trim(),
-        address: addressEl.value.trim() || null,
+        phone: phoneDigits,
+        phoneFormatted: phoneEl.value.trim(),
         carBrand: carBrandEl.value.trim() || null,
+        address: addressEl.value.trim() || null,
         geo: geoEl.value.trim() || null,
         ts: Date.now()
       };
 
-      if (!payload.phone) return showError('Укажите телефон.');
+      if (phoneDigits.length !== 11 || !phoneDigits.startsWith("79")) {
+        return showError('Введите телефон полностью в формате +7 (9XX) XXX-XX-XX');
+      }
+      if (!payload.carBrand) return showError('Укажите марку автомобиля.');
       if (!payload.address && !payload.geo) return showError('Укажите адрес или нажмите «Определить».');
 
       if (tg) {
         tg.sendData(JSON.stringify(payload));
-        // tg.close(); // если нужно закрывать сразу после отправки
+        // tg.close();
       } else {
         alert("Отправлено:\n" + JSON.stringify(payload, null, 2));
       }
@@ -371,6 +468,9 @@
       resetForm();
       showSection(successSection);
     });
+
+    // init
+    resetForm();
   </script>
 </body>
 </html>
