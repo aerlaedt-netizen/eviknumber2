@@ -1,39 +1,375 @@
 <!doctype html>
 <html lang="ru">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>Mini App</title>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>Эвакуатор — Mini App</title>
+
   <script src="https://telegram.org/js/telegram-web-app.js"></script>
+
+  <style>
+    :root{
+      --bg: #0f1115;
+      --card: #171a21;
+      --text: #e9edf5;
+      --muted: #a7b0c0;
+      --accent: #2ea6ff;
+      --accent2:#1c7ed6;
+      --danger:#ff5c7a;
+      --border: rgba(255,255,255,.10);
+      --radius: 18px;
+    }
+    * { box-sizing: border-box; }
+
+    html, body{
+      height: 100%;
+      margin: 0;
+      padding: 0;
+      background: var(--bg);
+      color: var(--text);
+      font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
+      overflow-x: hidden;
+    }
+
+    .screen{
+      min-height: 100vh;
+      width: 100%;
+      display: grid;
+      place-items: center;
+      padding:
+        calc(20px + env(safe-area-inset-top))
+        calc(20px + env(safe-area-inset-right))
+        calc(20px + env(safe-area-inset-bottom))
+        calc(20px + env(safe-area-inset-left));
+    }
+
+    .wrap{ width: min(720px, 100%); margin-inline: auto; }
+
+    .card{
+      background: var(--card);
+      border-radius: var(--radius);
+      padding: 28px;
+      box-shadow: 0 14px 40px rgba(0,0,0,.38);
+      border: 1px solid rgba(255,255,255,.08);
+      text-align: center;
+    }
+
+    h1{ margin: 0 0 10px; font-size: 32px; line-height: 1.15; }
+    p{ margin: 0 0 18px; color: var(--muted); font-size: 17px; line-height: 1.55; }
+
+    .btn{
+      width: 100%;
+      border: 0;
+      border-radius: 16px;
+      padding: 16px 18px;
+      background: linear-gradient(180deg, var(--accent), var(--accent2));
+      color: #fff;
+      font-weight: 800;
+      font-size: 17px;
+      cursor: pointer;
+    }
+    .btn.secondary{
+      background: transparent;
+      border: 1px solid rgba(255,255,255,.18);
+      color: var(--text);
+      font-weight: 700;
+    }
+
+    .hint{ margin-top: 12px; font-size: 13px; color: rgba(255,255,255,.55); }
+
+    .section{ display: none; }
+    .section.active{ display: block; }
+
+    .form{ margin-top: 18px; text-align: left; }
+    .grid{ display: grid; grid-template-columns: 1fr; gap: 12px; }
+
+    label{
+      display: block;
+      font-size: 13px;
+      color: rgba(255,255,255,.72);
+      margin-bottom: 6px;
+    }
+
+    input{
+      width: 100%;
+      padding: 12px 12px;
+      border-radius: 14px;
+      border: 1px solid rgba(255,255,255,.14);
+      background: rgba(255,255,255,.06);
+      color: var(--text);
+      outline: none;
+      font-size: 16px;
+    }
+    input::placeholder{ color: rgba(255,255,255,.35); }
+
+    .row{
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 10px;
+      align-items: end;
+    }
+
+    .smallbtn{
+      height: 44px;
+      padding: 0 14px;
+      border-radius: 14px;
+      border: 1px solid rgba(255,255,255,.18);
+      background: rgba(255,255,255,.04);
+      color: var(--text);
+      font-weight: 700;
+      cursor: pointer;
+      white-space: nowrap;
+    }
+
+    .actions{
+      margin-top: 14px;
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: 10px;
+    }
+
+    .error{
+      display: none;
+      margin-top: 10px;
+      padding: 10px 12px;
+      border-radius: 14px;
+      border: 1px solid rgba(255,92,122,.35);
+      background: rgba(255,92,122,.12);
+      color: #ffd1db;
+      font-size: 14px;
+      text-align: left;
+    }
+
+    .divider{
+      margin: 16px 0 10px;
+      height: 1px;
+      background: rgba(255,255,255,.08);
+    }
+
+    .okBadge{
+      width: 56px; height: 56px;
+      border-radius: 16px;
+      margin: 0 auto 14px;
+      display: grid;
+      place-items: center;
+      background: rgba(34,197,94,.12);
+      border: 1px solid rgba(34,197,94,.35);
+      color: #a7f3d0;
+      font-weight: 900;
+      font-size: 28px;
+      line-height: 1;
+    }
+    .successTitle{ margin: 0 0 8px; font-size: 28px; }
+    .successText{ margin: 0 0 18px; color: var(--muted); font-size: 16px; }
+  </style>
 </head>
+
 <body>
-  <h3>Отправка данных в бота</h3>
+  <div class="screen">
+    <main class="wrap">
+      <section class="card">
 
-  <label>Имя</label><br/>
-  <input id="name" placeholder="Введите имя" /><br/><br/>
+        <!-- START -->
+        <div id="startSection" class="section active">
+          <h1>Вызов эвакуатора</h1>
+          <p>Нажмите «Заказать машину», укажите телефон и адрес (или геолокацию) — и заявка уйдёт диспетчеру.</p>
 
-  <label>Сообщение</label><br/>
-  <textarea id="msg" placeholder="Введите текст"></textarea><br/><br/>
+          <div class="actions">
+            <button id="startOrderBtn" class="btn" type="button">Заказать машину</button>
+          </div>
 
-  <button id="send">Отправить</button>
+          <div class="hint">Mini App в Telegram</div>
+        </div>
+
+        <!-- FORM (МИНИМУМ + МАРКА) -->
+        <div id="formSection" class="section">
+          <h1>Заявка</h1>
+          <p>Минимум данных: телефон + адрес (или гео) + марка авто.</p>
+
+          <div class="form">
+            <div class="divider"></div>
+
+            <div class="grid">
+              <div>
+                <label for="phone">Телефон</label>
+                <input id="phone" type="tel" placeholder="+7 (999) 123-45-67" autocomplete="tel" inputmode="tel" />
+              </div>
+
+              <div>
+                <label for="address">Адрес (если удобно — текстом)</label>
+                <input id="address" type="text" placeholder="Город, улица, дом / ориентир" autocomplete="street-address" />
+              </div>
+
+              <div>
+                <label for="carBrand">Марка автомобиля</label>
+                <input id="carBrand" type="text" placeholder="Например: Toyota" autocomplete="off" />
+              </div>
+
+              <div class="row">
+                <div>
+                  <label for="geo">Геолокация (опционально)</label>
+                  <input id="geo" type="text" placeholder="55.7558, 37.6173" inputmode="decimal" />
+                </div>
+                <button id="geoBtn" class="smallbtn" type="button">Определить</button>
+              </div>
+            </div>
+
+            <div class="actions">
+              <button id="submitBtn" class="btn" type="button">Отправить заявку</button>
+              <button id="cancelBtn" class="btn secondary" type="button">Отмена</button>
+            </div>
+
+            <div id="error" class="error"></div>
+            <div class="hint">Отправка через Telegram WebApp → tg.sendData()</div>
+          </div>
+        </div>
+
+        <!-- SUCCESS -->
+        <div id="successSection" class="section">
+          <div class="okBadge">✓</div>
+          <h2 class="successTitle">Заявка отправлена</h2>
+          <p class="successText">Скоро свяжемся с вами.</p>
+
+          <div class="actions">
+            <button id="newOrderBtn" class="btn" type="button">Новая заявка</button>
+            <button id="backToStartBtn" class="btn secondary" type="button">На главный</button>
+          </div>
+
+          <div class="hint">Можно закрыть окно и вернуться в чат</div>
+        </div>
+
+      </section>
+    </main>
+  </div>
 
   <script>
-    const tg = window.Telegram.WebApp;
-    tg.ready();
+    const tg = window.Telegram?.WebApp;
 
-    document.getElementById("send").addEventListener("click", () => {
+    if (tg) {
+      tg.ready();
+      tg.expand();
+      try {
+        tg.setBackgroundColor('#0f1115');
+        tg.setHeaderColor('#0f1115');
+      } catch (e) {}
+    }
+
+    const startSection = document.getElementById('startSection');
+    const formSection = document.getElementById('formSection');
+    const successSection = document.getElementById('successSection');
+
+    const startOrderBtn = document.getElementById('startOrderBtn');
+    const cancelBtn = document.getElementById('cancelBtn');
+    const newOrderBtn = document.getElementById('newOrderBtn');
+    const backToStartBtn = document.getElementById('backToStartBtn');
+
+    const addressEl = document.getElementById('address');
+    const carBrandEl = document.getElementById('carBrand');
+    const geoEl = document.getElementById('geo');
+    const phoneEl = document.getElementById('phone');
+
+    const geoBtn = document.getElementById('geoBtn');
+    const submitBtn = document.getElementById('submitBtn');
+    const errorBox = document.getElementById('error');
+
+    function showSection(which){
+      for (const el of [startSection, formSection, successSection]) el.classList.remove('active');
+      which.classList.add('active');
+      clearError();
+      if (tg) tg.expand();
+    }
+
+    function showError(msg){
+      errorBox.textContent = msg;
+      errorBox.style.display = 'block';
+    }
+    function clearError(){
+      errorBox.textContent = '';
+      errorBox.style.display = 'none';
+    }
+
+    function resetForm(){
+      addressEl.value = '';
+      carBrandEl.value = '';
+      geoEl.value = '';
+      phoneEl.value = '';
+      clearError();
+    }
+
+    // Navigation
+    startOrderBtn.addEventListener('click', () => {
+      showSection(formSection);
+      phoneEl.focus();
+    });
+
+    cancelBtn.addEventListener('click', () => {
+      resetForm();
+      showSection(startSection);
+    });
+
+    newOrderBtn.addEventListener('click', () => {
+      resetForm();
+      showSection(formSection);
+      phoneEl.focus();
+    });
+
+    backToStartBtn.addEventListener('click', () => showSection(startSection));
+
+    // Geolocation
+    geoBtn.addEventListener('click', () => {
+      clearError();
+
+      if (!navigator.geolocation) {
+        showError('Геолокация не поддерживается на этом устройстве/вебвью.');
+        return;
+      }
+
+      geoBtn.disabled = true;
+      const oldText = geoBtn.textContent;
+      geoBtn.textContent = '...';
+
+      navigator.geolocation.getCurrentPosition(
+        (pos) => {
+          const lat = pos.coords.latitude.toFixed(6);
+          const lon = pos.coords.longitude.toFixed(6);
+          geoEl.value = `${lat}, ${lon}`;
+          geoBtn.disabled = false;
+          geoBtn.textContent = oldText;
+        },
+        () => {
+          showError('Не удалось получить геолокацию. Разрешите доступ к местоположению и попробуйте снова.');
+          geoBtn.disabled = false;
+          geoBtn.textContent = oldText;
+        },
+        { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
+      );
+    });
+
+    // Submit (МИНИМУМ ДАННЫХ В БОТА + МАРКА)
+    submitBtn.addEventListener('click', () => {
+      clearError();
+
       const payload = {
-        name: document.getElementById("name").value.trim(),
-        message: document.getElementById("msg").value.trim(),
-        // можно добавить что угодно
+        type: "evac_min",
+        phone: phoneEl.value.trim(),
+        address: addressEl.value.trim() || null,
+        carBrand: carBrandEl.value.trim() || null,
+        geo: geoEl.value.trim() || null,
         ts: Date.now()
       };
 
-      // Отправка данных в бота (придёт как message.web_app_data.data)
-      tg.sendData(JSON.stringify(payload));
+      if (!payload.phone) return showError('Укажите телефон.');
+      if (!payload.address && !payload.geo) return showError('Укажите адрес или нажмите «Определить».');
 
-      // (необязательно) закрыть мини‑апп
-      tg.close();
+      if (tg) {
+        tg.sendData(JSON.stringify(payload));
+        // tg.close(); // если нужно закрывать сразу после отправки
+      } else {
+        alert("Отправлено:\n" + JSON.stringify(payload, null, 2));
+      }
+
+      resetForm();
+      showSection(successSection);
     });
   </script>
 </body>
