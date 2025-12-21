@@ -124,21 +124,15 @@ async def webapp_data_handler(message: Message) -> None:
         + ")"
     )
 
-    text_lines = [
-        "🚨 Заявка на эвакуатор 🚨",
+    lines = [
+        "Заявка на эвакуатор",
         "",
-        "",
-        f"⏳ Время: {_dt(ts)}",
-        "",
-        f"👨 Клиент: {sender_line}",
-        "",
-        f"📱 Телефон: {phone}",
-        "",
-        f"🚗 Марка: {car_brand}",
-        "",
-        f"🗺️ Адрес: {address}",
-        "",
-        f"🌍 Гео: {geo}",
+        f"Время: {_dt(ts)}",
+        f"Клиент: {sender_line}",
+        f"Телефон: {phone}",
+        f"Марка: {car_brand}",
+        f"Адрес: {address}",
+        f"Гео: {geo}",
     ]
     if yandex_link:
         lines.append(f"Яндекс.Карты: {yandex_link}")
@@ -149,7 +143,7 @@ async def webapp_data_handler(message: Message) -> None:
     await message.bot.send_message(TARGET_USER_ID, text)
 
     last_request_ts[uid] = now
-    await message.answer("Заявка отправлена, ожидайте звонка диспетчера, обычно до 5 минут")
+    await message.answer("Заявка отправлена, ожидайте, с вами свяжется диспетчер, обычно до 10 минут")
 
 
 async def main() -> None:
