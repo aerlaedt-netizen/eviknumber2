@@ -13,12 +13,11 @@ WEBAPP_URL = os.getenv("WEBAPP_URL")
 
 dp = Dispatcher()
 
-# приветствие (до перезапуска)
+# Приветствие (до перезапуска процесса)
 greeted_users: set[int] = set()
 
-# лимит заявок: user_id -> unix time последней принятой заявки
+# Лимит заявок: user_id -> unix time последней принятой заявки (до перезапуска процесса)
 last_request_ts: dict[int, float] = {}
-
 COOLDOWN_SECONDS = 5 * 60  # 5 минут
 
 
@@ -37,19 +36,27 @@ def _clean(s: str | None) -> str:
     return s if s else "—"
 
 
-def _maps_link_from_geo(geo_text: str | None) -> str | None:
+def _yandex_maps_link_from_geo(geo_text: str | None) -> str | None:
+    """
+    geo_text ожидаем вида: "55.7558, 37.6173" (lat, lon)
+    Вернёт ссылку на Яндекс.Карты.
+    """
     if not geo_text:
         return None
+
     t = geo_text.replace(" ", "")
     if "," not in t:
         return None
-    lat, lon = t.split(",", 1)
+
+    lat_s, lon_s = t.split(",", 1)
     try:
-        float(lat)
-        float(lon)
+        lat = float(lat_s)
+        lon = float(lon_s)
     except Exception:
         return None
-    return f"https://maps.google.com/?q={lat},{lon}"
+
+    # В Яндекс.Картах порядок обычно lon,lat
+    return f"https://yandex.ru/maps/?pt={lon},{lat}&z=16&l=map"
 
 
 @dp.message(F.text == "/start")
@@ -59,6 +66,8 @@ async def start(message: Message):
         return
 
     uid = message.from_user.id
+
+    # Приветствие только при первом /start (до перезапуска бота)
     if uid not in greeted_users:
         greeted_users.add(uid)
         await message.answer(
@@ -67,7 +76,9 @@ async def start(message: Message):
         )
 
     kb = ReplyKeyboardMarkup(
-        keyboard=[[KeyboardButton(text="Заказать эвакуатор", web_app=WebAppInfo(url=WEBAPP_URL))]],
+        keyboard=[
+            [KeyboardButton(text="Заказать эвакуатор", web_app=WebAppInfo(url=WEBAPP_URL))]
+        ],
         resize_keyboard=True
     )
     await message.answer("Откройте мини‑апп и отправьте заявку.", reply_markup=kb)
@@ -78,13 +89,14 @@ async def webapp_data_handler(message: Message):
     uid = message.from_user.id
     now = time.time()
 
+    # Ограничение: 1 заявка / 5 минут на пользователя
     last = last_request_ts.get(uid)
     if last is not None and (now - last) < COOLDOWN_SECONDS:
         remain = int(COOLDOWN_SECONDS - (now - last))
         mins = remain // 60
         secs = remain % 60
         await message.answer(
-            f"Заявку можно отправлять не чаще 1 раза в 5 минут.\n"
+            "Заявку можно отправлять не чаще 1 раза в 5 минут.\n"
             f"Попробуйте через {mins:02d}:{secs:02d}."
         )
         return
@@ -95,13 +107,15 @@ async def webapp_data_handler(message: Message):
     except Exception:
         data = {"raw": raw}
 
+    # Под твой payload:
+    # {type:"evac_min", phone, phoneFormatted, carBrand, address, geo, ts}
     phone = _clean(data.get("phoneFormatted") or data.get("phone"))
     address = _clean(data.get("address"))
     car_brand = _clean(data.get("carBrand"))
     geo = _clean(data.get("geo"))
     ts = data.get("ts")
 
-    maps_link = _maps_link_from_geo(data.get("geo"))
+    yandex_link = _yandex_maps_link_from_geo(data.get("geo"))
 
     sender = message.from_user
     sender_line = (
@@ -110,7 +124,7 @@ async def webapp_data_handler(message: Message):
         + ")"
     )
 
-    text_lines = [
+   text_lines = [
         "🚨 Заявка на эвакуатор 🚨",
         "",
         "",
@@ -126,12 +140,12 @@ async def webapp_data_handler(message: Message):
         "",
         f"🌍 Гео: {geo}",
     ]
-    if maps_link:
-        text_lines.append(f"Карта: {maps_link}")
+    if yandex_link:
+        lines.append(f"Яндекс.Карты: {yandex_link}")
 
-    text = "\n".join(text_lines)
+    text = "\n".join(lines)
 
-    # Сначала пробуем отправить диспетчеру, и только потом фиксируем "последнюю заявку"
+    # Сначала отправляем диспетчеру, потом фиксируем время (чтобы не блокировать из-за ошибок отправки)
     await message.bot.send_message(TARGET_USER_ID, text)
 
     last_request_ts[uid] = now
