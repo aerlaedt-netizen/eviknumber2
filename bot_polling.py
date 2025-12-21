@@ -1,6 +1,7 @@
 import os
 import json
 import asyncio
+import time
 from datetime import datetime, timezone
 
 from aiogram import Bot, Dispatcher, F
@@ -8,12 +9,17 @@ from aiogram.types import Message, ReplyKeyboardMarkup, KeyboardButton, WebAppIn
 
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 TARGET_USER_ID = int(os.getenv("TARGET_USER_ID", "0"))
-WEBAPP_URL = os.getenv("WEBAPP_URL")  # https://aerlaedt-netizen.github.io/eviknumber2/
+WEBAPP_URL = os.getenv("WEBAPP_URL")
 
 dp = Dispatcher()
 
-# Храним, кому уже показывали приветствие (до перезапуска процесса)
+# приветствие (до перезапуска)
 greeted_users: set[int] = set()
+
+# лимит заявок: user_id -> unix time последней принятой заявки
+last_request_ts: dict[int, float] = {}
+
+COOLDOWN_SECONDS = 5 * 60  # 5 минут
 
 
 def _dt(ts_ms: int | None) -> str:
@@ -32,7 +38,6 @@ def _clean(s: str | None) -> str:
 
 
 def _maps_link_from_geo(geo_text: str | None) -> str | None:
-    # ожидаем "55.7558, 37.6173"
     if not geo_text:
         return None
     t = geo_text.replace(" ", "")
@@ -54,8 +59,6 @@ async def start(message: Message):
         return
 
     uid = message.from_user.id
-
-    # Приветствие только при первом /start (до перезапуска бота)
     if uid not in greeted_users:
         greeted_users.add(uid)
         await message.answer(
@@ -64,9 +67,7 @@ async def start(message: Message):
         )
 
     kb = ReplyKeyboardMarkup(
-        keyboard=[
-            [KeyboardButton(text="Заказать эвакуатор", web_app=WebAppInfo(url=WEBAPP_URL))]
-        ],
+        keyboard=[[KeyboardButton(text="Заказать эвакуатор", web_app=WebAppInfo(url=WEBAPP_URL))]],
         resize_keyboard=True
     )
     await message.answer("Откройте мини‑апп и отправьте заявку.", reply_markup=kb)
@@ -74,14 +75,26 @@ async def start(message: Message):
 
 @dp.message(F.web_app_data)
 async def webapp_data_handler(message: Message):
+    uid = message.from_user.id
+    now = time.time()
+
+    last = last_request_ts.get(uid)
+    if last is not None and (now - last) < COOLDOWN_SECONDS:
+        remain = int(COOLDOWN_SECONDS - (now - last))
+        mins = remain // 60
+        secs = remain % 60
+        await message.answer(
+            f"Заявку можно отправлять не чаще 1 раза в 5 минут.\n"
+            f"Попробуйте через {mins:02d}:{secs:02d}."
+        )
+        return
+
     raw = message.web_app_data.data
     try:
         data = json.loads(raw)
     except Exception:
         data = {"raw": raw}
 
-    # Под твой payload:
-    # {type:"evac_min", phone, phoneFormatted, carBrand, address, geo, ts}
     phone = _clean(data.get("phoneFormatted") or data.get("phone"))
     address = _clean(data.get("address"))
     car_brand = _clean(data.get("carBrand"))
@@ -97,23 +110,32 @@ async def webapp_data_handler(message: Message):
         + ")"
     )
 
-    lines = [
-        "🚨 Заявка на эвакуатор",
-        f"⌛ Время: {_dt(ts)}",
-        f"👨‍💼 Клиент: {sender_line}",
+    text_lines = [
+        "Заявка на эвакуатор",
         "",
-        f"📱 Телефон: {phone}",
-        f"🚗 Марка: {car_brand}",
-        f"🗺️ Адрес: {address}",
-        f"🌍 Гео: {geo}",
+        "",
+        f"Время: {_dt(ts)}",
+        "",
+        f"Клиент: {sender_line}",
+        "",
+        f"Телефон: {phone}",
+        "",
+        f"Марка: {car_brand}",
+        "",
+        f"Адрес: {address}",
+        "",
+        f"Гео: {geo}",
     ]
     if maps_link:
-        lines.append(f"Карта: {maps_link}")
+        text_lines.append(f"Карта: {maps_link}")
 
-    text = "\n".join(lines)
+    text = "\n".join(text_lines)
 
+    # Сначала пробуем отправить диспетчеру, и только потом фиксируем "последнюю заявку"
     await message.bot.send_message(TARGET_USER_ID, text)
-    await message.answer("Ваша заявка отправлена менеджеру, ожидайте обратного звонка.")
+
+    last_request_ts[uid] = now
+    await message.answer("Заявка отправлена.")
 
 
 async def main():
