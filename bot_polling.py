@@ -52,7 +52,7 @@ async def start(message: Message):
         return
 
     kb = ReplyKeyboardMarkup(
-        keyboard=[[KeyboardButton(text="Открыть мини‑апп", web_app=WebAppInfo(url=WEBAPP_URL))]],
+        keyboard=[[KeyboardButton(text=Заказать эвакуатор, web_app=WebAppInfo(url=WEBAPP_URL))]],
         resize_keyboard=True
     )
     await message.answer("Нажмите кнопку и отправьте заявку из мини‑аппа.", reply_markup=kb)
