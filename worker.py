@@ -10,7 +10,11 @@ import aiohttp
 
 from aiogram import Bot, Dispatcher, F
 from aiogram.filters import Command, CommandObject
-from aiogram.types import Message, ReplyKeyboardMarkup, KeyboardButton, WebAppInfo
+from aiogram.types import (
+    Message, ReplyKeyboardMarkup, KeyboardButton, WebAppInfo,
+    InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery
+)
+from aiogram.exceptions import TelegramBadRequest
 
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 TARGET_USER_ID = int(os.getenv("TARGET_USER_ID", "0"))
@@ -49,8 +53,12 @@ START_TEXT = """Ваш надежный помощник в любой ситу�
 """
 
 
+def is_dispatcher_user_id(user_id: int) -> bool:
+    return user_id == TARGET_USER_ID
+
+
 def is_dispatcher(message: Message) -> bool:
-    return bool(message.from_user) and message.from_user.id == TARGET_USER_ID
+    return bool(message.from_user) and is_dispatcher_user_id(message.from_user.id)
 
 
 def with_query(url: str, **params) -> str:
@@ -92,6 +100,12 @@ def _yandex_maps_link_from_geo(geo_text: str | None) -> str | None:
     except Exception:
         return None
     return f"https://yandex.ru/maps/?pt={lon},{lat}&z=16&l=map"
+
+
+def _user_tag_from_row(r: dict) -> str:
+    if r.get("tg_username"):
+        return f"@{r['tg_username']}"
+    return r.get("tg_full_name") or "—"
 
 
 # ---------------- DB (только заявки/статусы) ----------------
@@ -170,8 +184,16 @@ async def db_list_requests(limit: int = 10) -> list[dict]:
     limit = max(1, min(50, int(limit)))
     async with DB_POOL.acquire() as con:
         rows = await con.fetch(
-            "SELECT id, created_at, phone_formatted, car_brand, address, status "
-            "FROM requests ORDER BY created_at DESC LIMIT $1",
+            """
+            SELECT
+              id, created_at, status,
+              tg_username, tg_full_name,
+              phone_formatted, car_brand, address,
+              yandex_link, geo
+            FROM requests
+            ORDER BY created_at DESC
+            LIMIT $1
+            """,
             limit
         )
         return [dict(r) for r in rows]
@@ -214,6 +236,89 @@ async def api_set_drivers(n: int) -> int:
         return int(j["drivers_on_line"])
 
 
+# ---------------- UI helpers (список/детали + клавиатуры) ----------------
+
+def build_requests_list_text(items: list[dict]) -> str:
+    blocks: list[str] = []
+    for r in items:
+        created = r["created_at"].strftime("%Y-%m-%d %H:%M")
+        user_tag = _user_tag_from_row(r)
+        maps = r.get("yandex_link") or _yandex_maps_link_from_geo(r.get("geo"))
+
+        block_lines = [
+            f"#{r['id']} | {created} | {r.get('status')}",
+            f"Пользователь: {user_tag}",
+            f"Телефон: {r.get('phone_formatted') or '—'}",
+            f"Марка: {r.get('car_brand') or '—'}",
+            f"Адрес: {r.get('address') or '—'}",
+        ]
+        if maps:
+            block_lines.append(f"Яндекс.Карты: {maps}")
+
+        # кликабельная команда текстом (дополнительно)
+        block_lines.append(f"Подробно: /request {r['id']}")
+
+        blocks.append("\n".join(block_lines))
+
+    return "Последние заявки:\n\n" + ("\n\n".join(blocks) if blocks else "Заявок пока нет.")
+
+
+def build_requests_list_kb(items: list[dict], limit: int) -> InlineKeyboardMarkup:
+    rows = []
+    for r in items:
+        rows.append([InlineKeyboardButton(text=f"Подробнее #{r['id']}", callback_data=f"req:{r['id']}:{limit}")])
+    return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+def format_request_details(r: dict) -> str:
+    user_tag = _user_tag_from_row(r)
+    maps = r.get("yandex_link") or _yandex_maps_link_from_geo(r.get("geo"))
+
+    lines = [
+        f"Заявка #{r['id']}",
+        f"Статус: {r.get('status')}",
+        f"Создана: {r['created_at'].strftime('%Y-%m-%d %H:%M:%S')}",
+        f"Пользователь: {user_tag}",
+        f"Телефон: {r.get('phone_formatted') or r.get('phone') or '—'}",
+        f"Марка: {r.get('car_brand') or '—'}",
+        f"Адрес: {r.get('address') or '—'}",
+        f"Гео: {r.get('geo') or '—'}",
+    ]
+    if maps:
+        lines.append(f"Яндекс.Карты: {maps}")
+
+    lines.append("")
+    lines.append(f"Команда: /setstatus {r['id']} <new|in_work|done|cancel>")
+    return "\n".join(lines)
+
+
+def build_request_details_kb(req_id: int, limit: int) -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(text="Назад к списку", callback_data=f"back:{limit}"),
+            ],
+            [
+                InlineKeyboardButton(text="Новая", callback_data=f"st:{req_id}:new:{limit}"),
+                InlineKeyboardButton(text="В работу", callback_data=f"st:{req_id}:in_work:{limit}"),
+            ],
+            [
+                InlineKeyboardButton(text="Готово", callback_data=f"st:{req_id}:done:{limit}"),
+                InlineKeyboardButton(text="Отмена", callback_data=f"st:{req_id}:cancel:{limit}"),
+            ],
+        ]
+    )
+
+
+async def safe_edit_message(cb: CallbackQuery, text: str, reply_markup: InlineKeyboardMarkup | None = None) -> None:
+    try:
+        await cb.message.edit_text(text, reply_markup=reply_markup)
+    except TelegramBadRequest:
+        # если редактирование невозможно (например, "message is not modified" или др.)
+        # просто отправим новое сообщение
+        await cb.message.answer(text, reply_markup=reply_markup)
+
+
 # ---------------- Public ----------------
 
 @dp.message(Command("start"))
@@ -227,7 +332,6 @@ async def start(message: Message) -> None:
         greeted_users.add(uid)
         await message.answer(START_TEXT)
 
-    # Быстро подставим initial drivers из API (для мгновенного отображения)
     try:
         drivers = await api_get_drivers()
     except Exception:
@@ -337,6 +441,7 @@ async def deldrivers_cmd(message: Message, command: CommandObject) -> None:
 async def requests_cmd(message: Message, command: CommandObject) -> None:
     if not is_dispatcher(message):
         return
+
     arg = (command.args or "").strip()
     limit = 10
     if arg:
@@ -344,20 +449,13 @@ async def requests_cmd(message: Message, command: CommandObject) -> None:
             limit = int(arg)
         except Exception:
             limit = 10
+    limit = max(1, min(50, limit))
 
     items = await db_list_requests(limit)
-    if not items:
-        await message.answer("Заявок пока нет.")
-        return
+    text = build_requests_list_text(items)
+    kb = build_requests_list_kb(items, limit)
 
-    lines = ["Последние заявки:"]
-    for r in items:
-        created = r["created_at"].strftime("%Y-%m-%d %H:%M")
-        lines.append(
-            f"#{r['id']} | {created} | {r.get('status')} | {r.get('phone_formatted') or '—'} | "
-            f"{(r.get('car_brand') or '—')} | {(r.get('address') or '—')}"
-        )
-    await message.answer("\n".join(lines))
+    await message.answer(text, reply_markup=kb)
 
 
 @dp.message(Command("request"))
@@ -379,20 +477,7 @@ async def request_cmd(message: Message, command: CommandObject) -> None:
         await message.answer("Заявка не найдена.")
         return
 
-    lines = [
-        f"Заявка #{r['id']} ({r['status']})",
-        f"Создана: {r['created_at'].strftime('%Y-%m-%d %H:%M:%S')}",
-        f"Клиент: {r.get('tg_full_name') or '—'} (id={r.get('tg_user_id') or '—'}"
-        + (f", @{r['tg_username']}" if r.get("tg_username") else "")
-        + ")",
-        f"Телефон: {r.get('phone_formatted') or r.get('phone') or '—'}",
-        f"Марка: {r.get('car_brand') or '—'}",
-        f"Адрес: {r.get('address') or '—'}",
-        f"Гео: {r.get('geo') or '—'}",
-    ]
-    if r.get("yandex_link"):
-        lines.append(f"Яндекс.Карты: {r['yandex_link']}")
-    await message.answer("\n".join(lines))
+    await message.answer(format_request_details(r))
 
 
 @dp.message(Command("setstatus"))
@@ -418,6 +503,95 @@ async def setstatus_cmd(message: Message, command: CommandObject) -> None:
         await message.answer("Заявка не найдена.")
         return
     await message.answer(f"Готово. Заявка #{req_id} теперь со статусом: {status}")
+
+
+# ---------------- Inline callbacks: details/back/status (edit same message) ----------------
+
+@dp.callback_query(F.data.startswith("req:"))
+async def cb_req_details(cb: CallbackQuery) -> None:
+    if not is_dispatcher_user_id(cb.from_user.id):
+        await cb.answer("Недоступно", show_alert=True)
+        return
+
+    try:
+        _, req_id_s, limit_s = cb.data.split(":", 2)
+        req_id = int(req_id_s)
+        limit = int(limit_s)
+        limit = max(1, min(50, limit))
+    except Exception:
+        await cb.answer("Ошибка данных", show_alert=True)
+        return
+
+    r = await db_get_request(req_id)
+    if not r:
+        await cb.answer("Заявка не найдена", show_alert=True)
+        return
+
+    await cb.answer()
+    await safe_edit_message(
+        cb,
+        format_request_details(r),
+        reply_markup=build_request_details_kb(req_id, limit)
+    )
+
+
+@dp.callback_query(F.data.startswith("back:"))
+async def cb_back_to_list(cb: CallbackQuery) -> None:
+    if not is_dispatcher_user_id(cb.from_user.id):
+        await cb.answer("Недоступно", show_alert=True)
+        return
+
+    try:
+        _, limit_s = cb.data.split(":", 1)
+        limit = int(limit_s)
+        limit = max(1, min(50, limit))
+    except Exception:
+        limit = 10
+
+    items = await db_list_requests(limit)
+    await cb.answer()
+    await safe_edit_message(
+        cb,
+        build_requests_list_text(items),
+        reply_markup=build_requests_list_kb(items, limit)
+    )
+
+
+@dp.callback_query(F.data.startswith("st:"))
+async def cb_set_status(cb: CallbackQuery) -> None:
+    if not is_dispatcher_user_id(cb.from_user.id):
+        await cb.answer("Недоступно", show_alert=True)
+        return
+
+    try:
+        _, req_id_s, status, limit_s = cb.data.split(":", 3)
+        req_id = int(req_id_s)
+        limit = int(limit_s)
+        limit = max(1, min(50, limit))
+    except Exception:
+        await cb.answer("Ошибка данных", show_alert=True)
+        return
+
+    if status not in ALLOWED_STATUSES:
+        await cb.answer("Неверный статус", show_alert=True)
+        return
+
+    ok = await db_set_status(req_id, status)
+    if not ok:
+        await cb.answer("Заявка не найдена", show_alert=True)
+        return
+
+    r = await db_get_request(req_id)
+    if not r:
+        await cb.answer("Заявка не найдена", show_alert=True)
+        return
+
+    await cb.answer("Статус обновлён")
+    await safe_edit_message(
+        cb,
+        format_request_details(r),
+        reply_markup=build_request_details_kb(req_id, limit)
+    )
 
 
 # ---------------- WebApp заявки ----------------
@@ -453,9 +627,8 @@ async def webapp_data_handler(message: Message) -> None:
     yandex_link = _yandex_maps_link_from_geo(data.get("geo"))
 
     sender_line = (
-        f"{sender.full_name} (id={sender.id}"
-        + (f", @{sender.username}" if sender.username else "")
-        + ")"
+        f"{sender.full_name}"
+        + (f" (@{sender.username})" if sender.username else "")
     )
 
     lines = [
