@@ -5,18 +5,28 @@ import time
 from datetime import datetime, timezone
 from urllib.parse import urlparse, parse_qsl, urlencode, urlunparse
 
+from aiohttp import web
+
 from aiogram import Bot, Dispatcher, F
 from aiogram.filters import Command, CommandObject
 from aiogram.types import Message, ReplyKeyboardMarkup, KeyboardButton, WebAppInfo
 
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 TARGET_USER_ID = int(os.getenv("TARGET_USER_ID", "0"))
+
+# Ссылка на GitHub Pages (Mini App)
 WEBAPP_URL = os.getenv("WEBAPP_URL")
+
+# Публичный URL вашего Render-сервиса, например:
+# https://my-evac-bot.onrender.com
+PUBLIC_BASE_URL = os.getenv("PUBLIC_BASE_URL")
+
+# Render даёт PORT автоматически
+PORT = int(os.getenv("PORT", "10000"))
 
 dp = Dispatcher()
 
 greeted_users: set[int] = set()
-
 last_request_ts: dict[int, float] = {}
 COOLDOWN_SECONDS = 5 * 60  # 5 минут
 
@@ -90,41 +100,84 @@ def _yandex_maps_link_from_geo(geo_text: str | None) -> str | None:
 
 START_TEXT = """Ваш надежный помощник в любой ситуации на дороге — бот службы эвакуации!
 
-Застряли на дороге? Автомобиль сломался или попал в аварию? Не тратьте время на поиски эвакуатора — наш бот сделает всё за вас!
-
-С помощью нашего удобного сервиса вы сможете:
- • Быстро вызвать эвакуатор в любой точке города или за его пределами.
- • Получить точную информацию о времени прибытия и стоимости услуги.
- • Выбрать подходящий тип эвакуатора для вашего автомобиля.
-
-Почему выбирают нас?
- • Круглосуточная работа 24/7.
- • Быстрая обработка запросов через бота.
- • Надежные и проверенные водители эвакуаторов.
- • Прозрачные цены без скрытых платежей.
-
 Нажмите кнопку ниже, заполните форму — заявка придёт диспетчеру.
 """
 
 
+# =========================
+# API (aiohttp) для Mini App
+# =========================
+
+@web.middleware
+async def cors_middleware(request: web.Request, handler):
+    # Простая CORS для GitHub Pages / Telegram WebView
+    if request.method == "OPTIONS":
+        resp = web.Response(status=204)
+    else:
+        resp = await handler(request)
+
+    resp.headers["Access-Control-Allow-Origin"] = "*"
+    resp.headers["Access-Control-Allow-Methods"] = "GET,OPTIONS"
+    resp.headers["Access-Control-Allow-Headers"] = "Content-Type"
+    resp.headers["Cache-Control"] = "no-store"
+    return resp
+
+
+async def api_drivers(request: web.Request) -> web.Response:
+    return web.json_response(
+        {
+            "drivers_on_line": drivers_on_line,
+            "updated_at": int(time.time()),
+        }
+    )
+
+
+async def healthz(request: web.Request) -> web.Response:
+    return web.json_response({"ok": True})
+
+
+async def start_http_server() -> tuple[web.AppRunner, web.TCPSite]:
+    app = web.Application(middlewares=[cors_middleware])
+    app.router.add_get("/api/drivers", api_drivers)
+    app.router.add_get("/healthz", healthz)
+
+    runner = web.AppRunner(app)
+    await runner.setup()
+    site = web.TCPSite(runner, host="0.0.0.0", port=PORT)
+    await site.start()
+    return runner, site
+
+
+# =========================
+# Bot handlers
+# =========================
+
 @dp.message(Command("start"))
 async def start(message: Message) -> None:
     if not WEBAPP_URL:
-        await message.answer("WEBAPP_URL не задан в переменных окружения.")
+        await message.answer("WEBAPP_URL не задан.")
+        return
+    if not PUBLIC_BASE_URL:
+        await message.answer("PUBLIC_BASE_URL не задан. Нужен для автообновления в Mini App.")
         return
 
     uid = message.from_user.id
-
     if uid not in greeted_users:
         greeted_users.add(uid)
         await message.answer(START_TEXT)
 
-    webapp_url = with_query(WEBAPP_URL, drivers=drivers_on_line)
+    api_url = PUBLIC_BASE_URL.rstrip("/") + "/api/drivers"
+
+    # Передаём в Mini App:
+    # - drivers (быстро показать сразу)
+    # - api (куда потом ходить за автообновлением)
+    webapp_url = with_query(WEBAPP_URL, drivers=drivers_on_line, api=api_url)
 
     kb = ReplyKeyboardMarkup(
         keyboard=[[KeyboardButton(text="Заказать эвакуатор", web_app=WebAppInfo(url=webapp_url))]],
         resize_keyboard=True,
     )
+
     await message.answer(
         "Откройте мини‑апп и отправьте заявку.\n"
         f"Водителей на линии сейчас: {drivers_on_line}",
@@ -276,11 +329,20 @@ async def main() -> None:
         raise RuntimeError("TARGET_USER_ID не задан или 0")
     if not WEBAPP_URL:
         raise RuntimeError("WEBAPP_URL не задан")
+    if not PUBLIC_BASE_URL:
+        raise RuntimeError("PUBLIC_BASE_URL не задан (нужен для Mini App автообновления)")
 
     load_state()
 
+    # 1) Поднимаем HTTP сервер (Render будет проверять порт)
+    runner, _site = await start_http_server()
+
+    # 2) Запускаем бота
     bot = Bot(token=BOT_TOKEN)
-    await dp.start_polling(bot)
+    try:
+        await dp.start_polling(bot)
+    finally:
+        await runner.cleanup()
 
 
 if __name__ == "__main__":
