@@ -174,8 +174,9 @@
           <h1>Вызов эвакуатора</h1>
           <p>Нажмите «Заказать машину», укажите телефон, марку и адрес (или геолокацию) — заявка уйдёт диспетчеру.</p>
 
-          <!-- Показ водителей на линии (из ?drivers=... в URL) -->
+          <!-- Показываем количество водителей -->
           <p id="driversLine" class="hint" style="margin-top:10px;">Водителей на линии: —</p>
+          <div id="driversStatus" class="hint" style="margin-top:6px; opacity:.8;"></div>
 
           <div class="actions">
             <button id="startOrderBtn" class="btn" type="button">Заказать машину</button>
@@ -265,20 +266,56 @@
       } catch (e) {}
     }
 
-    // ===== Показ водителей на линии из URL (?drivers=...) =====
-    function renderDriversCount() {
-      const el = document.getElementById('driversLine');
-      if (!el) return;
+    const driversLineEl = document.getElementById('driversLine');
+    const driversStatusEl = document.getElementById('driversStatus');
 
-      const params = new URLSearchParams(window.location.search);
-      const v = params.get('drivers');
-      const n = v === null ? NaN : parseInt(v, 10);
-
-      el.textContent = Number.isFinite(n)
+    function setDriversText(n) {
+      driversLineEl.textContent = Number.isFinite(n)
         ? `Водителей на линии: ${n}`
         : 'Водителей на линии: —';
     }
-    renderDriversCount();
+
+    // 1) Быстро показать число из URL (?drivers=...)
+    function renderDriversFromUrl() {
+      const params = new URLSearchParams(window.location.search);
+      const v = params.get('drivers');
+      const n = v === null ? NaN : parseInt(v, 10);
+      if (Number.isFinite(n)) setDriversText(n);
+    }
+
+    // 2) Автообновление через API (?api=... передаёт бот)
+    function getApiUrl() {
+      const params = new URLSearchParams(window.location.search);
+      return params.get('api'); // ожидаем полный URL вида https://....onrender.com/api/drivers
+    }
+
+    async function fetchDrivers() {
+      const apiUrl = getApiUrl();
+      if (!apiUrl) {
+        driversStatusEl.textContent = 'API не задан (нет параметра api в URL).';
+        return;
+      }
+
+      try {
+        const r = await fetch(apiUrl, { cache: "no-store" });
+        if (!r.ok) throw new Error(`HTTP ${r.status}`);
+        const j = await r.json();
+
+        const n = parseInt(j.drivers_on_line, 10);
+        setDriversText(Number.isFinite(n) ? n : NaN);
+
+        const t = j.updated_at ? new Date(j.updated_at * 1000) : null;
+        driversStatusEl.textContent = t
+          ? `Обновлено: ${t.toLocaleTimeString()}`
+          : 'Обновлено';
+      } catch (e) {
+        driversStatusEl.textContent = 'Не удалось обновить данные (проверьте Render/API).';
+      }
+    }
+
+    renderDriversFromUrl();
+    fetchDrivers();
+    setInterval(fetchDrivers, 5000); // каждые 5 секунд
 
     const startSection = document.getElementById('startSection');
     const formSection = document.getElementById('formSection');
@@ -311,12 +348,11 @@
 
     function formatPhoneDigits(after) {
       const d = (after || "").replace(/\D/g, "").slice(0, 9);
-      const a = d.slice(0, 2);  // чтобы получить 9XX
+      const a = d.slice(0, 2);
       const b = d.slice(2, 5);
       const c = d.slice(5, 7);
       const e = d.slice(7, 9);
 
-      // ВАЖНО: пока не введены 2 цифры после 9 — скобку не закрываем
       let s = PHONE_PREFIX;
       if (a.length === 0) return s;
       if (a.length === 1) return s + a;
@@ -330,14 +366,12 @@
 
     function renderPhone() {
       phoneEl.value = formatPhoneDigits(phoneAfterDigits);
-      // защита префикса
       if (!phoneEl.value.startsWith(PHONE_PREFIX)) phoneEl.value = PHONE_PREFIX;
       moveCaretToEnd();
     }
 
     function parseAfterDigitsFromValue(v) {
       const digits = (v || "").replace(/\D/g, "");
-      // приводим к виду 79XXXXXXXXX
       let after = "";
       if (digits.startsWith("79")) after = digits.slice(2);
       else if (digits.startsWith("7")) after = digits.slice(1);
@@ -350,7 +384,6 @@
       renderPhone();
     }
 
-    // курсор всегда в конец
     ["focus", "click", "mouseup", "touchend"].forEach(evt => {
       phoneEl.addEventListener(evt, () => {
         if (!phoneEl.value || !phoneEl.value.startsWith(PHONE_PREFIX)) {
@@ -362,12 +395,10 @@
       });
     });
 
-    // Backspace: удаляем ПОСЛЕДНЮЮ ЦИФРУ, а не символ форматирования
     phoneEl.addEventListener("keydown", (e) => {
       if (e.key === "Backspace") {
         e.preventDefault();
 
-        // если уже пусто (только префикс) — ничего не делаем
         if (phoneAfterDigits.length === 0) {
           phoneEl.value = PHONE_PREFIX;
           moveCaretToEnd();
@@ -379,14 +410,12 @@
         return;
       }
 
-      // запрещаем увести курсор/редактировать префикс (на всякий случай)
       if (e.key === "ArrowLeft" || e.key === "Home") {
         e.preventDefault();
         moveCaretToEnd();
       }
     });
 
-    // Любой ввод/вставка: парсим цифры и перерисовываем
     phoneEl.addEventListener("input", () => {
       phoneAfterDigits = parseAfterDigitsFromValue(phoneEl.value);
       renderPhone();
@@ -397,9 +426,6 @@
       which.classList.add('active');
       clearError();
       if (tg) tg.expand();
-
-      // на всякий случай перерисуем число при возврате на старт
-      if (which === startSection) renderDriversCount();
     }
 
     function showError(msg){
@@ -420,7 +446,6 @@
       clearError();
     }
 
-    // Navigation
     startOrderBtn.addEventListener('click', () => {
       showSection(formSection);
       initPhone();
@@ -441,7 +466,6 @@
 
     backToStartBtn.addEventListener('click', () => showSection(startSection));
 
-    // Geolocation
     geoBtn.addEventListener('click', () => {
       clearError();
 
@@ -471,15 +495,14 @@
       );
     });
 
-    // Submit
     submitBtn.addEventListener('click', () => {
       clearError();
 
-      const phoneDigits = ("79" + phoneAfterDigits).replace(/\D/g, ""); // 79XXXXXXXXX
+      const phoneDigits = ("79" + phoneAfterDigits).replace(/\D/g, "");
 
       const payload = {
         type: "evac_min",
-        phone: phoneDigits,                // чистые цифры
+        phone: phoneDigits,
         phoneFormatted: phoneEl.value.trim(),
         carBrand: carBrandEl.value.trim() || null,
         address: addressEl.value.trim() || null,
@@ -495,7 +518,6 @@
 
       if (tg) {
         tg.sendData(JSON.stringify(payload));
-        // tg.close();
       } else {
         alert("Отправлено:\n" + JSON.stringify(payload, null, 2));
       }
@@ -504,7 +526,6 @@
       showSection(successSection);
     });
 
-    // init
     resetForm();
   </script>
 </body>
