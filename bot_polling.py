@@ -13,25 +13,22 @@ from aiogram.types import Message, ReplyKeyboardMarkup, KeyboardButton, WebAppIn
 
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 TARGET_USER_ID = int(os.getenv("TARGET_USER_ID", "0"))
-
-# Ссылка на GitHub Pages (Mini App)
-WEBAPP_URL = os.getenv("WEBAPP_URL")
-
-# Публичный URL вашего Render-сервиса, например:
-# https://my-evac-bot.onrender.com
-PUBLIC_BASE_URL = os.getenv("PUBLIC_BASE_URL")
-
-# Render даёт PORT автоматически
+WEBAPP_URL = os.getenv("WEBAPP_URL")              # GitHub Pages
+PUBLIC_BASE_URL = os.getenv("PUBLIC_BASE_URL")    # Render Web Service URL, напр. https://xxx.onrender.com
 PORT = int(os.getenv("PORT", "10000"))
 
 dp = Dispatcher()
 
 greeted_users: set[int] = set()
 last_request_ts: dict[int, float] = {}
-COOLDOWN_SECONDS = 5 * 60  # 5 минут
+COOLDOWN_SECONDS = 5 * 60
 
 STATE_FILE = os.getenv("STATE_FILE", "bot_state.json")
 drivers_on_line: int = 0
+
+
+def is_dispatcher(message: Message) -> bool:
+    return bool(message.from_user) and message.from_user.id == TARGET_USER_ID
 
 
 def load_state() -> None:
@@ -64,10 +61,6 @@ def with_query(url: str, **params) -> str:
     return urlunparse((p.scheme, p.netloc, p.path, p.params, new_query, p.fragment))
 
 
-def is_dispatcher(message: Message) -> bool:
-    return bool(message.from_user) and message.from_user.id == TARGET_USER_ID
-
-
 def _dt(ts_ms: int | None) -> str:
     if not ts_ms:
         return "—"
@@ -98,7 +91,21 @@ def _yandex_maps_link_from_geo(geo_text: str | None) -> str | None:
     return f"https://yandex.ru/maps/?pt={lon},{lat}&z=16&l=map"
 
 
+# ===== Ваш стартовый текст (добавлен в код) =====
 START_TEXT = """Ваш надежный помощник в любой ситуации на дороге — бот службы эвакуации!
+
+Застряли на дороге? Автомобиль сломался или попал в аварию? Не тратьте время на поиски эвакуатора — наш бот сделает всё за вас!
+
+С помощью нашего удобного сервиса вы сможете:
+ • Быстро вызвать эвакуатор в любой точке города или за его пределами.
+ • Получить точную информацию о времени прибытия и стоимости услуги.
+ • Выбрать подходящий тип эвакуатора для вашего автомобиля.
+
+Почему выбирают нас?
+ • Круглосуточная работа 24/7.
+ • Быстрая обработка запросов через бота.
+ • Надежные и проверенные водители эвакуаторов.
+ • Прозрачные цены без скрытых платежей.
 
 Нажмите кнопку ниже, заполните форму — заявка придёт диспетчеру.
 """
@@ -110,7 +117,6 @@ START_TEXT = """Ваш надежный помощник в любой ситу�
 
 @web.middleware
 async def cors_middleware(request: web.Request, handler):
-    # Простая CORS для GitHub Pages / Telegram WebView
     if request.method == "OPTIONS":
         resp = web.Response(status=204)
     else:
@@ -124,19 +130,14 @@ async def cors_middleware(request: web.Request, handler):
 
 
 async def api_drivers(request: web.Request) -> web.Response:
-    return web.json_response(
-        {
-            "drivers_on_line": drivers_on_line,
-            "updated_at": int(time.time()),
-        }
-    )
+    return web.json_response({"drivers_on_line": drivers_on_line, "updated_at": int(time.time())})
 
 
 async def healthz(request: web.Request) -> web.Response:
     return web.json_response({"ok": True})
 
 
-async def start_http_server() -> tuple[web.AppRunner, web.TCPSite]:
+async def start_http_server() -> web.AppRunner:
     app = web.Application(middlewares=[cors_middleware])
     app.router.add_get("/api/drivers", api_drivers)
     app.router.add_get("/healthz", healthz)
@@ -145,55 +146,42 @@ async def start_http_server() -> tuple[web.AppRunner, web.TCPSite]:
     await runner.setup()
     site = web.TCPSite(runner, host="0.0.0.0", port=PORT)
     await site.start()
-    return runner, site
+    return runner
 
 
 # =========================
-# Bot handlers
+# Команды диспетчера (только TARGET_USER_ID)
 # =========================
 
-@dp.message(Command("start"))
-async def start(message: Message) -> None:
-    if not WEBAPP_URL:
-        await message.answer("WEBAPP_URL не задан.")
-        return
-    if not PUBLIC_BASE_URL:
-        await message.answer("PUBLIC_BASE_URL не задан. Нужен для автообновления в Mini App.")
+@dp.message(Command("help"))
+async def help_cmd(message: Message) -> None:
+    if not is_dispatcher(message):
+        await message.answer("Команды недоступны.")
         return
 
-    uid = message.from_user.id
-    if uid not in greeted_users:
-        greeted_users.add(uid)
-        await message.answer(START_TEXT)
-
-    api_url = PUBLIC_BASE_URL.rstrip("/") + "/api/drivers"
-
-    # Передаём в Mini App:
-    # - drivers (быстро показать сразу)
-    # - api (куда потом ходить за автообновлением)
-    webapp_url = with_query(WEBAPP_URL, drivers=drivers_on_line, api=api_url)
-
-    kb = ReplyKeyboardMarkup(
-        keyboard=[[KeyboardButton(text="Заказать эвакуатор", web_app=WebAppInfo(url=webapp_url))]],
-        resize_keyboard=True,
+    text = (
+        "Команды диспетчера:\n"
+        "/help — показать команды\n"
+        "/drivers — текущее количество водителей на линии\n"
+        "/setdrivers <n> — установить количество\n"
+        "/adddrivers <n> — прибавить\n"
+        "/deldrivers <n> — убавить (не ниже 0)\n"
     )
-
-    await message.answer(
-        "Откройте мини‑апп и отправьте заявку.\n"
-        f"Водителей на линии сейчас: {drivers_on_line}",
-        reply_markup=kb,
-    )
+    await message.answer(text)
 
 
 @dp.message(Command("drivers"))
 async def drivers_cmd(message: Message) -> None:
+    if not is_dispatcher(message):
+        await message.answer("Команды недоступны.")
+        return
     await message.answer(f"Водителей на линии сейчас: {drivers_on_line}")
 
 
 @dp.message(Command("setdrivers"))
 async def setdrivers_cmd(message: Message, command: CommandObject) -> None:
     if not is_dispatcher(message):
-        await message.answer("Команда доступна только диспетчеру.")
+        await message.answer("Команды недоступны.")
         return
 
     arg = (command.args or "").strip()
@@ -218,7 +206,7 @@ async def setdrivers_cmd(message: Message, command: CommandObject) -> None:
 @dp.message(Command("adddrivers"))
 async def adddrivers_cmd(message: Message, command: CommandObject) -> None:
     if not is_dispatcher(message):
-        await message.answer("Команда доступна только диспетчеру.")
+        await message.answer("Команды недоступны.")
         return
 
     arg = (command.args or "").strip()
@@ -243,7 +231,7 @@ async def adddrivers_cmd(message: Message, command: CommandObject) -> None:
 @dp.message(Command("deldrivers"))
 async def deldrivers_cmd(message: Message, command: CommandObject) -> None:
     if not is_dispatcher(message):
-        await message.answer("Команда доступна только диспетчеру.")
+        await message.answer("Команды недоступны.")
         return
 
     arg = (command.args or "").strip()
@@ -264,6 +252,41 @@ async def deldrivers_cmd(message: Message, command: CommandObject) -> None:
     save_state()
     await message.answer(f"Готово. Водителей на линии теперь: {drivers_on_line}")
 
+
+# =========================
+# /start
+# =========================
+
+@dp.message(Command("start"))
+async def start(message: Message) -> None:
+    if not WEBAPP_URL:
+        await message.answer("WEBAPP_URL не задан.")
+        return
+    if not PUBLIC_BASE_URL:
+        await message.answer("PUBLIC_BASE_URL не задан.")
+        return
+
+    uid = message.from_user.id
+
+    # Приветствие показываем один раз (до перезапуска процесса)
+    if uid not in greeted_users:
+        greeted_users.add(uid)
+        await message.answer(START_TEXT)
+
+    api_url = PUBLIC_BASE_URL.rstrip("/") + "/api/drivers"
+    webapp_url = with_query(WEBAPP_URL, drivers=drivers_on_line, api=api_url)
+
+    kb = ReplyKeyboardMarkup(
+        keyboard=[[KeyboardButton(text="Заказать эвакуатор", web_app=WebAppInfo(url=webapp_url))]],
+        resize_keyboard=True,
+    )
+
+    await message.answer("Откройте мини‑апп и отправьте заявку.", reply_markup=kb)
+
+
+# =========================
+# Приём заявки из Mini App
+# =========================
 
 @dp.message(F.web_app_data)
 async def webapp_data_handler(message: Message) -> None:
@@ -322,6 +345,17 @@ async def webapp_data_handler(message: Message) -> None:
     await message.answer("Заявка отправлена, ожидайте, с вами свяжется диспетчер, обычно до 10 минут")
 
 
+# =========================
+# “Скрыть команды” для всех кроме диспетчера
+# (ставим в конце, чтобы не мешал конкретным командам выше)
+# =========================
+
+@dp.message(F.text.startswith("/"))
+async def block_commands_for_non_dispatcher(message: Message) -> None:
+    if not is_dispatcher(message):
+        await message.answer("Команды недоступны.")
+
+
 async def main() -> None:
     if not BOT_TOKEN:
         raise RuntimeError("BOT_TOKEN не задан")
@@ -330,14 +364,12 @@ async def main() -> None:
     if not WEBAPP_URL:
         raise RuntimeError("WEBAPP_URL не задан")
     if not PUBLIC_BASE_URL:
-        raise RuntimeError("PUBLIC_BASE_URL не задан (нужен для Mini App автообновления)")
+        raise RuntimeError("PUBLIC_BASE_URL не задан")
 
     load_state()
 
-    # 1) Поднимаем HTTP сервер (Render будет проверять порт)
-    runner, _site = await start_http_server()
+    runner = await start_http_server()
 
-    # 2) Запускаем бота
     bot = Bot(token=BOT_TOKEN)
     try:
         await dp.start_polling(bot)
