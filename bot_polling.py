@@ -14,7 +14,7 @@ from aiogram.types import Message, ReplyKeyboardMarkup, KeyboardButton, WebAppIn
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 TARGET_USER_ID = int(os.getenv("TARGET_USER_ID", "0"))
 WEBAPP_URL = os.getenv("WEBAPP_URL")              # GitHub Pages
-PUBLIC_BASE_URL = os.getenv("PUBLIC_BASE_URL")    # Render Web Service URL, напр. https://xxx.onrender.com
+PUBLIC_BASE_URL = os.getenv("PUBLIC_BASE_URL")    # https://xxx.onrender.com
 PORT = int(os.getenv("PORT", "10000"))
 
 dp = Dispatcher()
@@ -91,7 +91,6 @@ def _yandex_maps_link_from_geo(geo_text: str | None) -> str | None:
     return f"https://yandex.ru/maps/?pt={lon},{lat}&z=16&l=map"
 
 
-# ===== Ваш стартовый текст (добавлен в код) =====
 START_TEXT = """Ваш надежный помощник в любой ситуации на дороге — бот службы эвакуации!
 
 Застряли на дороге? Автомобиль сломался или попал в аварию? Не тратьте время на поиски эвакуатора — наш бот сделает всё за вас!
@@ -112,7 +111,7 @@ START_TEXT = """Ваш надежный помощник в любой ситу�
 
 
 # =========================
-# API (aiohttp) для Mini App
+# API (aiohttp) for Mini App
 # =========================
 
 @web.middleware
@@ -150,30 +149,57 @@ async def start_http_server() -> web.AppRunner:
 
 
 # =========================
-# Команды диспетчера (только TARGET_USER_ID)
+# Public command
+# =========================
+
+@dp.message(Command("start"))
+async def start(message: Message) -> None:
+    if not WEBAPP_URL:
+        await message.answer("WEBAPP_URL не задан.")
+        return
+    if not PUBLIC_BASE_URL:
+        await message.answer("PUBLIC_BASE_URL не задан.")
+        return
+
+    uid = message.from_user.id
+
+    # приветствие — 1 раз до рестарта
+    if uid not in greeted_users:
+        greeted_users.add(uid)
+        await message.answer(START_TEXT)
+
+    api_url = PUBLIC_BASE_URL.rstrip("/") + "/api/drivers"
+    webapp_url = with_query(WEBAPP_URL, drivers=drivers_on_line, api=api_url)
+
+    kb = ReplyKeyboardMarkup(
+        keyboard=[[KeyboardButton(text="Заказать эвакуатор", web_app=WebAppInfo(url=webapp_url))]],
+        resize_keyboard=True,
+    )
+    await message.answer("Откройте мини‑апп и отправьте заявку.", reply_markup=kb)
+
+
+# =========================
+# Dispatcher-only commands
 # =========================
 
 @dp.message(Command("help"))
 async def help_cmd(message: Message) -> None:
     if not is_dispatcher(message):
-        await message.answer("Команды недоступны.")
+        # полностью "скрываем": можно молчать, но дадим короткий ответ
         return
-
-    text = (
+    await message.answer(
         "Команды диспетчера:\n"
         "/help — показать команды\n"
-        "/drivers — текущее количество водителей на линии\n"
+        "/drivers — текущее количество водителей\n"
         "/setdrivers <n> — установить количество\n"
         "/adddrivers <n> — прибавить\n"
         "/deldrivers <n> — убавить (не ниже 0)\n"
     )
-    await message.answer(text)
 
 
 @dp.message(Command("drivers"))
 async def drivers_cmd(message: Message) -> None:
     if not is_dispatcher(message):
-        await message.answer("Команды недоступны.")
         return
     await message.answer(f"Водителей на линии сейчас: {drivers_on_line}")
 
@@ -181,7 +207,6 @@ async def drivers_cmd(message: Message) -> None:
 @dp.message(Command("setdrivers"))
 async def setdrivers_cmd(message: Message, command: CommandObject) -> None:
     if not is_dispatcher(message):
-        await message.answer("Команды недоступны.")
         return
 
     arg = (command.args or "").strip()
@@ -206,7 +231,6 @@ async def setdrivers_cmd(message: Message, command: CommandObject) -> None:
 @dp.message(Command("adddrivers"))
 async def adddrivers_cmd(message: Message, command: CommandObject) -> None:
     if not is_dispatcher(message):
-        await message.answer("Команды недоступны.")
         return
 
     arg = (command.args or "").strip()
@@ -231,7 +255,6 @@ async def adddrivers_cmd(message: Message, command: CommandObject) -> None:
 @dp.message(Command("deldrivers"))
 async def deldrivers_cmd(message: Message, command: CommandObject) -> None:
     if not is_dispatcher(message):
-        await message.answer("Команды недоступны.")
         return
 
     arg = (command.args or "").strip()
@@ -254,38 +277,7 @@ async def deldrivers_cmd(message: Message, command: CommandObject) -> None:
 
 
 # =========================
-# /start
-# =========================
-
-@dp.message(Command("start"))
-async def start(message: Message) -> None:
-    if not WEBAPP_URL:
-        await message.answer("WEBAPP_URL не задан.")
-        return
-    if not PUBLIC_BASE_URL:
-        await message.answer("PUBLIC_BASE_URL не задан.")
-        return
-
-    uid = message.from_user.id
-
-    # Приветствие показываем один раз (до перезапуска процесса)
-    if uid not in greeted_users:
-        greeted_users.add(uid)
-        await message.answer(START_TEXT)
-
-    api_url = PUBLIC_BASE_URL.rstrip("/") + "/api/drivers"
-    webapp_url = with_query(WEBAPP_URL, drivers=drivers_on_line, api=api_url)
-
-    kb = ReplyKeyboardMarkup(
-        keyboard=[[KeyboardButton(text="Заказать эвакуатор", web_app=WebAppInfo(url=webapp_url))]],
-        resize_keyboard=True,
-    )
-
-    await message.answer("Откройте мини‑апп и отправьте заявку.", reply_markup=kb)
-
-
-# =========================
-# Приём заявки из Mini App
+# WebApp заявки
 # =========================
 
 @dp.message(F.web_app_data)
@@ -343,17 +335,6 @@ async def webapp_data_handler(message: Message) -> None:
 
     last_request_ts[uid] = now
     await message.answer("Заявка отправлена, ожидайте, с вами свяжется диспетчер, обычно до 10 минут")
-
-
-# =========================
-# “Скрыть команды” для всех кроме диспетчера
-# (ставим в конце, чтобы не мешал конкретным командам выше)
-# =========================
-
-@dp.message(F.text.startswith("/"))
-async def block_commands_for_non_dispatcher(message: Message) -> None:
-    if not is_dispatcher(message):
-        await message.answer("Команды недоступны.")
 
 
 async def main() -> None:
