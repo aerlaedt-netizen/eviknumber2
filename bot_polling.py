@@ -15,14 +15,11 @@ WEBAPP_URL = os.getenv("WEBAPP_URL")
 
 dp = Dispatcher()
 
-# Приветствие (до перезапуска процесса)
 greeted_users: set[int] = set()
 
-# Лимит заявок: user_id -> unix time последней принятой заявки (до перезапуска процесса)
 last_request_ts: dict[int, float] = {}
 COOLDOWN_SECONDS = 5 * 60  # 5 минут
 
-# ===== Состояние "водителей на линии" (сохранение в файл) =====
 STATE_FILE = os.getenv("STATE_FILE", "bot_state.json")
 drivers_on_line: int = 0
 
@@ -46,7 +43,6 @@ def save_state() -> None:
 
 
 def with_query(url: str, **params) -> str:
-    """Добавляет/перезаписывает query-параметры в URL."""
     p = urlparse(url)
     q = dict(parse_qsl(p.query, keep_blank_values=True))
     for k, v in params.items():
@@ -56,6 +52,10 @@ def with_query(url: str, **params) -> str:
             q[k] = str(v)
     new_query = urlencode(q, doseq=True)
     return urlunparse((p.scheme, p.netloc, p.path, p.params, new_query, p.fragment))
+
+
+def is_dispatcher(message: Message) -> bool:
+    return bool(message.from_user) and message.from_user.id == TARGET_USER_ID
 
 
 def _dt(ts_ms: int | None) -> str:
@@ -74,25 +74,17 @@ def _clean(s: str | None) -> str:
 
 
 def _yandex_maps_link_from_geo(geo_text: str | None) -> str | None:
-    """
-    geo_text ожидаем вида: "55.7558, 37.6173" (lat, lon)
-    Вернёт ссылку на Яндекс.Карты.
-    """
     if not geo_text:
         return None
-
     t = geo_text.replace(" ", "")
     if "," not in t:
         return None
-
     lat_s, lon_s = t.split(",", 1)
     try:
         lat = float(lat_s)
         lon = float(lon_s)
     except Exception:
         return None
-
-    # В Яндекс.Картах порядок обычно lon,lat
     return f"https://yandex.ru/maps/?pt={lon},{lat}&z=16&l=map"
 
 
@@ -115,10 +107,6 @@ START_TEXT = """Ваш надежный помощник в любой ситу�
 """
 
 
-def is_admin(message: Message) -> bool:
-    return bool(message.from_user) and message.from_user.id == TARGET_USER_ID
-
-
 @dp.message(Command("start"))
 async def start(message: Message) -> None:
     if not WEBAPP_URL:
@@ -127,18 +115,14 @@ async def start(message: Message) -> None:
 
     uid = message.from_user.id
 
-    # Приветствие только при первом /start (до перезапуска бота)
     if uid not in greeted_users:
         greeted_users.add(uid)
         await message.answer(START_TEXT)
 
-    # Подставляем актуальное число водителей в URL mini app
     webapp_url = with_query(WEBAPP_URL, drivers=drivers_on_line)
 
     kb = ReplyKeyboardMarkup(
-        keyboard=[
-            [KeyboardButton(text="Заказать эвакуатор", web_app=WebAppInfo(url=webapp_url))]
-        ],
+        keyboard=[[KeyboardButton(text="Заказать эвакуатор", web_app=WebAppInfo(url=webapp_url))]],
         resize_keyboard=True,
     )
     await message.answer(
@@ -155,7 +139,7 @@ async def drivers_cmd(message: Message) -> None:
 
 @dp.message(Command("setdrivers"))
 async def setdrivers_cmd(message: Message, command: CommandObject) -> None:
-    if not is_admin(message):
+    if not is_dispatcher(message):
         await message.answer("Команда доступна только диспетчеру.")
         return
 
@@ -178,12 +162,61 @@ async def setdrivers_cmd(message: Message, command: CommandObject) -> None:
     await message.answer(f"Готово. Водителей на линии теперь: {drivers_on_line}")
 
 
+@dp.message(Command("adddrivers"))
+async def adddrivers_cmd(message: Message, command: CommandObject) -> None:
+    if not is_dispatcher(message):
+        await message.answer("Команда доступна только диспетчеру.")
+        return
+
+    arg = (command.args or "").strip()
+    if not arg:
+        await message.answer("Использование: /adddrivers <число>\nНапример: /adddrivers 2")
+        return
+
+    try:
+        delta = int(arg)
+        if delta < 0:
+            raise ValueError
+    except Exception:
+        await message.answer("Нужно целое число ≥ 0.\nНапример: /adddrivers 1")
+        return
+
+    global drivers_on_line
+    drivers_on_line += delta
+    save_state()
+    await message.answer(f"Готово. Водителей на линии теперь: {drivers_on_line}")
+
+
+@dp.message(Command("deldrivers"))
+async def deldrivers_cmd(message: Message, command: CommandObject) -> None:
+    if not is_dispatcher(message):
+        await message.answer("Команда доступна только диспетчеру.")
+        return
+
+    arg = (command.args or "").strip()
+    if not arg:
+        await message.answer("Использование: /deldrivers <число>\nНапример: /deldrivers 1")
+        return
+
+    try:
+        delta = int(arg)
+        if delta < 0:
+            raise ValueError
+    except Exception:
+        await message.answer("Нужно целое число ≥ 0.\nНапример: /deldrivers 1")
+        return
+
+    global drivers_on_line
+    drivers_on_line = max(0, drivers_on_line - delta)
+    save_state()
+    await message.answer(f"Готово. Водителей на линии теперь: {drivers_on_line}")
+
+
 @dp.message(F.web_app_data)
 async def webapp_data_handler(message: Message) -> None:
     uid = message.from_user.id
     now = time.time()
 
-    # Ограничение: 1 заявка / 5 минут на пользователя
     last = last_request_ts.get(uid)
     if last is not None and (now - last) < COOLDOWN_SECONDS:
         remain = int(COOLDOWN_SECONDS - (now - last))
@@ -230,9 +263,7 @@ async def webapp_data_handler(message: Message) -> None:
     if yandex_link:
         lines.append(f"Яндекс.Карты: {yandex_link}")
 
-    text = "\n".join(lines)
-
-    await message.bot.send_message(TARGET_USER_ID, text)
+    await message.bot.send_message(TARGET_USER_ID, "\n".join(lines))
 
     last_request_ts[uid] = now
     await message.answer("Заявка отправлена, ожидайте, с вами свяжется диспетчер, обычно до 10 минут")
