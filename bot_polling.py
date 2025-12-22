@@ -3,8 +3,10 @@ import json
 import asyncio
 import time
 from datetime import datetime, timezone
+from urllib.parse import urlparse, parse_qsl, urlencode, urlunparse
 
 from aiogram import Bot, Dispatcher, F
+from aiogram.filters import Command, CommandObject
 from aiogram.types import Message, ReplyKeyboardMarkup, KeyboardButton, WebAppInfo
 
 BOT_TOKEN = os.getenv("BOT_TOKEN")
@@ -19,6 +21,41 @@ greeted_users: set[int] = set()
 # Лимит заявок: user_id -> unix time последней принятой заявки (до перезапуска процесса)
 last_request_ts: dict[int, float] = {}
 COOLDOWN_SECONDS = 5 * 60  # 5 минут
+
+# ===== Состояние "водителей на линии" (сохранение в файл) =====
+STATE_FILE = os.getenv("STATE_FILE", "bot_state.json")
+drivers_on_line: int = 0
+
+
+def load_state() -> None:
+    global drivers_on_line
+    try:
+        with open(STATE_FILE, "r", encoding="utf-8") as f:
+            st = json.load(f)
+        drivers_on_line = int(st.get("drivers_on_line", 0))
+        if drivers_on_line < 0:
+            drivers_on_line = 0
+    except Exception:
+        drivers_on_line = 0
+
+
+def save_state() -> None:
+    st = {"drivers_on_line": drivers_on_line}
+    with open(STATE_FILE, "w", encoding="utf-8") as f:
+        json.dump(st, f, ensure_ascii=False, indent=2)
+
+
+def with_query(url: str, **params) -> str:
+    """Добавляет/перезаписывает query-параметры в URL."""
+    p = urlparse(url)
+    q = dict(parse_qsl(p.query, keep_blank_values=True))
+    for k, v in params.items():
+        if v is None:
+            q.pop(k, None)
+        else:
+            q[k] = str(v)
+    new_query = urlencode(q, doseq=True)
+    return urlunparse((p.scheme, p.netloc, p.path, p.params, new_query, p.fragment))
 
 
 def _dt(ts_ms: int | None) -> str:
@@ -74,14 +111,15 @@ START_TEXT = """Ваш надежный помощник в любой ситу�
  • Надежные и проверенные водители эвакуаторов.
  • Прозрачные цены без скрытых платежей.
 
-Не ждите, пока ситуация станет хуже! Просто напишите нашему боту, и эвакуатор уже в пути.
-Сохраняйте спокойствие — мы всегда рядом, чтобы помочь!
-
 Нажмите кнопку ниже, заполните форму — заявка придёт диспетчеру.
 """
 
 
-@dp.message(F.text == "/start")
+def is_admin(message: Message) -> bool:
+    return bool(message.from_user) and message.from_user.id == TARGET_USER_ID
+
+
+@dp.message(Command("start"))
 async def start(message: Message) -> None:
     if not WEBAPP_URL:
         await message.answer("WEBAPP_URL не задан в переменных окружения.")
@@ -94,13 +132,50 @@ async def start(message: Message) -> None:
         greeted_users.add(uid)
         await message.answer(START_TEXT)
 
+    # Подставляем актуальное число водителей в URL mini app
+    webapp_url = with_query(WEBAPP_URL, drivers=drivers_on_line)
+
     kb = ReplyKeyboardMarkup(
         keyboard=[
-            [KeyboardButton(text="Заказать эвакуатор", web_app=WebAppInfo(url=WEBAPP_URL))]
+            [KeyboardButton(text="Заказать эвакуатор", web_app=WebAppInfo(url=webapp_url))]
         ],
         resize_keyboard=True,
     )
-    await message.answer("Откройте мини‑апп и отправьте заявку.", reply_markup=kb)
+    await message.answer(
+        "Откройте мини‑апп и отправьте заявку.\n"
+        f"Водителей на линии сейчас: {drivers_on_line}",
+        reply_markup=kb,
+    )
+
+
+@dp.message(Command("drivers"))
+async def drivers_cmd(message: Message) -> None:
+    await message.answer(f"Водителей на линии сейчас: {drivers_on_line}")
+
+
+@dp.message(Command("setdrivers"))
+async def setdrivers_cmd(message: Message, command: CommandObject) -> None:
+    if not is_admin(message):
+        await message.answer("Команда доступна только диспетчеру.")
+        return
+
+    arg = (command.args or "").strip()
+    if not arg:
+        await message.answer("Использование: /setdrivers <число>\nНапример: /setdrivers 5")
+        return
+
+    try:
+        n = int(arg)
+        if n < 0:
+            raise ValueError
+    except Exception:
+        await message.answer("Нужно целое число ≥ 0.\nНапример: /setdrivers 3")
+        return
+
+    global drivers_on_line
+    drivers_on_line = n
+    save_state()
+    await message.answer(f"Готово. Водителей на линии теперь: {drivers_on_line}")
 
 
 @dp.message(F.web_app_data)
@@ -126,8 +201,6 @@ async def webapp_data_handler(message: Message) -> None:
     except Exception:
         data = {"raw": raw}
 
-    # payload:
-    # {type:"evac_min", phone, phoneFormatted, carBrand, address, geo, ts}
     phone = _clean(data.get("phoneFormatted") or data.get("phone"))
     address = _clean(data.get("address"))
     car_brand = _clean(data.get("carBrand"))
@@ -152,13 +225,13 @@ async def webapp_data_handler(message: Message) -> None:
         f"Марка: {car_brand}",
         f"Адрес: {address}",
         f"Гео: {geo}",
+        f"Водителей на линии (по боту): {drivers_on_line}",
     ]
     if yandex_link:
         lines.append(f"Яндекс.Карты: {yandex_link}")
 
     text = "\n".join(lines)
 
-    # Сначала отправляем диспетчеру, потом фиксируем время
     await message.bot.send_message(TARGET_USER_ID, text)
 
     last_request_ts[uid] = now
@@ -172,6 +245,8 @@ async def main() -> None:
         raise RuntimeError("TARGET_USER_ID не задан или 0")
     if not WEBAPP_URL:
         raise RuntimeError("WEBAPP_URL не задан")
+
+    load_state()
 
     bot = Bot(token=BOT_TOKEN)
     await dp.start_polling(bot)
