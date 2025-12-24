@@ -14,7 +14,7 @@ from pydantic import BaseModel
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 DATABASE_URL = os.getenv("DATABASE_URL")
 TARGET_USER_ID = int(os.getenv("TARGET_USER_ID", "0"))
-API_ADMIN_TOKEN = os.getenv("API_ADMIN_TOKEN")  # optional fallback
+API_ADMIN_TOKEN = os.getenv("API_ADMIN_TOKEN")  # fallback for manager outside Telegram
 
 POOL: asyncpg.Pool | None = None
 
@@ -38,6 +38,10 @@ def _parse_qs(qs: str) -> dict[str, str]:
 
 
 def _tg_webapp_check_init_data(init_data: str, bot_token: str) -> dict[str, Any]:
+    """
+    Verifies Telegram WebApp initData signature and basic expiration.
+    Returns parsed user dict.
+    """
     from urllib.parse import unquote
 
     data = _parse_qs(init_data)
@@ -70,7 +74,12 @@ def _tg_webapp_check_init_data(init_data: str, bot_token: str) -> dict[str, Any]
     return user
 
 
-def _require_admin(init_data: str | None, x_admin_token: str | None) -> dict[str, Any]:
+def _require_admin(init_data: str | None, admin_token: str | None) -> dict[str, Any]:
+    """
+    Admin auth options:
+    1) Telegram WebApp initData (manager is TARGET_USER_ID)
+    2) Fallback API token (API_ADMIN_TOKEN), via query admin_token
+    """
     # 1) Telegram initData
     if init_data:
         if not BOT_TOKEN:
@@ -83,8 +92,8 @@ def _require_admin(init_data: str | None, x_admin_token: str | None) -> dict[str
             raise HTTPException(403, "Not an admin")
         return user
 
-    # 2) fallback token
-    if API_ADMIN_TOKEN and x_admin_token == API_ADMIN_TOKEN:
+    # 2) Fallback token
+    if API_ADMIN_TOKEN and admin_token == API_ADMIN_TOKEN:
         if not TARGET_USER_ID:
             raise HTTPException(500, "TARGET_USER_ID not set")
         return {"id": TARGET_USER_ID, "token": "fallback"}
@@ -173,19 +182,24 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+
+# --- health/root ---
 @app.get("/")
 async def root():
     return {"ok": True}
 
+
 @app.get("/healthz")
 async def healthz():
     return {"ok": True}
+
 
 @app.get("/health")
 async def health():
     return {"ok": True}
 
 
+# --- public ---
 @app.get("/api/drivers")
 async def get_drivers():
     v = await _get_setting("drivers_on_line", 0)
@@ -196,16 +210,15 @@ async def get_drivers():
     return {"drivers_on_line": n}
 
 
-# ---- ADMIN (initData can be Header OR Query) ----
-
+# --- admin (accept initData via header OR query; accept admin_token via query) ---
 @app.get("/api/admin/me")
 async def admin_me(
     x_tg_init_data: str | None = Header(default=None, alias="X-Tg-Init-Data"),
     tg_init_data: str | None = Query(default=None, alias="tg_init_data"),
-    x_admin_token: str | None = Header(default=None, alias="X-Admin-Token"),
+    admin_token: str | None = Query(default=None, alias="admin_token"),
 ):
     init_data = x_tg_init_data or tg_init_data
-    user = _require_admin(init_data, x_admin_token)
+    user = _require_admin(init_data, admin_token)
     return {"ok": True, "user": {"id": user.get("id"), "username": user.get("username")}}
 
 
@@ -214,10 +227,11 @@ async def set_drivers(
     payload: DriversPayload,
     x_tg_init_data: str | None = Header(default=None, alias="X-Tg-Init-Data"),
     tg_init_data: str | None = Query(default=None, alias="tg_init_data"),
-    x_admin_token: str | None = Header(default=None, alias="X-Admin-Token"),
+    admin_token: str | None = Query(default=None, alias="admin_token"),
 ):
     init_data = x_tg_init_data or tg_init_data
-    _require_admin(init_data, x_admin_token)
+    _require_admin(init_data, admin_token)
+
     n = int(payload.drivers_on_line)
     if n < 0:
         n = 0
@@ -231,10 +245,10 @@ async def admin_list_requests(
     status: str | None = Query(None),
     x_tg_init_data: str | None = Header(default=None, alias="X-Tg-Init-Data"),
     tg_init_data: str | None = Query(default=None, alias="tg_init_data"),
-    x_admin_token: str | None = Header(default=None, alias="X-Admin-Token"),
+    admin_token: str | None = Query(default=None, alias="admin_token"),
 ):
     init_data = x_tg_init_data or tg_init_data
-    _require_admin(init_data, x_admin_token)
+    _require_admin(init_data, admin_token)
 
     where = ""
     args: list[Any] = [limit]
@@ -263,10 +277,11 @@ async def admin_get_request(
     req_id: int,
     x_tg_init_data: str | None = Header(default=None, alias="X-Tg-Init-Data"),
     tg_init_data: str | None = Query(default=None, alias="tg_init_data"),
-    x_admin_token: str | None = Header(default=None, alias="X-Admin-Token"),
+    admin_token: str | None = Query(default=None, alias="admin_token"),
 ):
     init_data = x_tg_init_data or tg_init_data
-    _require_admin(init_data, x_admin_token)
+    _require_admin(init_data, admin_token)
+
     async with POOL.acquire() as con:
         row = await con.fetchrow("SELECT * FROM requests WHERE id=$1", req_id)
     if not row:
@@ -280,10 +295,11 @@ async def admin_set_request_status(
     payload: StatusPayload,
     x_tg_init_data: str | None = Header(default=None, alias="X-Tg-Init-Data"),
     tg_init_data: str | None = Query(default=None, alias="tg_init_data"),
-    x_admin_token: str | None = Header(default=None, alias="X-Admin-Token"),
+    admin_token: str | None = Query(default=None, alias="admin_token"),
 ):
     init_data = x_tg_init_data or tg_init_data
-    _require_admin(init_data, x_admin_token)
+    _require_admin(init_data, admin_token)
+
     status = (payload.status or "").strip()
     if status not in {"new", "in_work", "done", "cancel"}:
         raise HTTPException(400, "Bad status")
