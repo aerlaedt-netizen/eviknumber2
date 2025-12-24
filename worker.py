@@ -805,7 +805,7 @@ async def webapp_data_handler(message: Message) -> None:
     await message.bot.send_message(TARGET_USER_ID, "\n".join(lines))
 
     last_request_ts[uid] = now
-    await message.answer("Заявка отправлена, ожидайте, с вами свяжется диспетчер, обычно до 10 минут")
+    await message.answer("Заявка отправлена, ожидайте, с вами свяжется диспетчер, обычно до 5 минут. По истечению этого времени, наберите по номеру +7 (965) 747-07-27")
 
 
 async def main() -> None:
