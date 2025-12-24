@@ -90,7 +90,7 @@
       margin-bottom: 6px;
     }
 
-    input{
+    input, select, textarea{
       width: 100%;
       padding: 12px 12px;
       border-radius: 14px;
@@ -161,6 +161,73 @@
     }
     .successTitle{ margin: 0 0 8px; font-size: 28px; }
     .successText{ margin: 0 0 18px; color: var(--muted); font-size: 16px; }
+
+    /* === ADD: admin list styles (минимально, в вашем стиле) === */
+    .adminCard{
+      margin-top: 14px;
+      text-align: left;
+      padding: 18px;
+      border-radius: 16px;
+      border: 1px solid rgba(255,255,255,.10);
+      background: rgba(255,255,255,.04);
+    }
+    .adminTitle{
+      margin: 0 0 10px;
+      font-size: 18px;
+      font-weight: 900;
+      text-align: left;
+    }
+    .list{
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      margin-top: 12px;
+    }
+    .item{
+      border: 1px solid rgba(255,255,255,.12);
+      border-radius: 14px;
+      padding: 12px;
+      background: rgba(0,0,0,.10);
+    }
+    .itemHead{
+      display:flex;
+      justify-content: space-between;
+      gap: 10px;
+      flex-wrap: wrap;
+      align-items: baseline;
+    }
+    .pill{
+      display:inline-block;
+      padding: 2px 10px;
+      border-radius: 999px;
+      border: 1px solid rgba(255,255,255,.14);
+      color: rgba(255,255,255,.75);
+      font-size: 12px;
+      margin-left: 8px;
+    }
+    .mono{
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+      font-size: 12px;
+      white-space: pre-wrap;
+      word-break: break-word;
+      color: rgba(255,255,255,.80);
+      margin-top: 8px;
+    }
+    .btnRow{
+      display:flex;
+      gap: 8px;
+      flex-wrap: wrap;
+      margin-top: 10px;
+    }
+    .smallbtn.danger{
+      border-color: rgba(255,92,122,.35);
+      background: rgba(255,92,122,.10);
+    }
+    .smallbtn.primary{
+      border-color: rgba(46,166,255,.35);
+      background: rgba(46,166,255,.10);
+    }
+    .mutedLine{ color: rgba(255,255,255,.60); font-size: 13px; margin-top: 8px; }
   </style>
 </head>
 
@@ -180,6 +247,8 @@
 
           <div class="actions">
             <button id="startOrderBtn" class="btn" type="button">Заказать машину</button>
+            <!-- ADD: Админка (появится только если вы админ) -->
+            <button id="adminBtn" class="btn secondary" type="button" style="display:none;">Админ-панель</button>
           </div>
 
           <div class="hint">Mini App в Telegram</div>
@@ -250,6 +319,99 @@
           <div class="hint">Можно закрыть окно и вернуться в чат</div>
         </div>
 
+        <!-- ADD: ADMIN -->
+        <div id="adminSection" class="section">
+          <h1>Админ-панель</h1>
+          <p id="adminTopStatus">Проверяем доступ…</p>
+
+          <div class="actions" style="margin-top:10px;">
+            <button id="adminBackBtn" class="btn secondary" type="button">Назад</button>
+          </div>
+
+          <div class="adminCard">
+            <div class="adminTitle">Водители</div>
+
+            <div class="row">
+              <div>
+                <label>Сейчас на линии</label>
+                <input id="adminDriversNow" type="text" disabled value="—" />
+              </div>
+              <button id="adminDriversRefreshBtn" class="smallbtn primary" type="button">Обновить</button>
+            </div>
+
+            <div class="btnRow">
+              <button id="adminDriversPlusBtn" class="smallbtn" type="button">+1</button>
+              <button id="adminDriversMinusBtn" class="smallbtn" type="button">-1</button>
+            </div>
+
+            <div class="row" style="margin-top:10px;">
+              <div>
+                <label for="adminDriversSet">Установить число</label>
+                <input id="adminDriversSet" type="number" min="0" placeholder="Например: 7" />
+              </div>
+              <button id="adminDriversSetBtn" class="smallbtn" type="button">Применить</button>
+            </div>
+
+            <div id="adminDriversMsg" class="mutedLine"></div>
+          </div>
+
+          <div class="adminCard">
+            <div class="adminTitle">Заявки</div>
+
+            <div class="grid">
+              <div>
+                <label for="adminReqStatus">Статус</label>
+                <select id="adminReqStatus">
+                  <option value="">Все</option>
+                  <option value="new">new</option>
+                  <option value="in_work">in_work</option>
+                  <option value="done">done</option>
+                  <option value="cancel">cancel</option>
+                </select>
+              </div>
+
+              <div>
+                <label for="adminReqLimit">Лимит</label>
+                <select id="adminReqLimit">
+                  <option value="10">10</option>
+                  <option value="20" selected>20</option>
+                  <option value="50">50</option>
+                  <option value="100">100</option>
+                </select>
+              </div>
+
+              <div class="row">
+                <div>
+                  <label for="adminReqOpenId">Открыть по ID</label>
+                  <input id="adminReqOpenId" type="number" min="1" placeholder="Например: 123" />
+                </div>
+                <button id="adminReqOpenBtn" class="smallbtn" type="button">Открыть</button>
+              </div>
+            </div>
+
+            <div class="actions">
+              <button id="adminReqRefreshBtn" class="btn secondary" type="button">Обновить список</button>
+            </div>
+
+            <div id="adminReqMsg" class="mutedLine"></div>
+            <div id="adminReqList" class="list"></div>
+          </div>
+
+          <div class="adminCard" id="adminReqDetailsCard" style="display:none;">
+            <div class="adminTitle">Заявка <span id="adminReqDetailsId" class="mono"></span></div>
+            <div id="adminReqDetailsText" class="mono"></div>
+
+            <div class="btnRow">
+              <button class="smallbtn" data-setst="new" type="button">new</button>
+              <button class="smallbtn" data-setst="in_work" type="button">in_work</button>
+              <button class="smallbtn" data-setst="done" type="button">done</button>
+              <button class="smallbtn danger" data-setst="cancel" type="button">cancel</button>
+            </div>
+
+            <div id="adminReqDetailsMsg" class="mutedLine"></div>
+          </div>
+        </div>
+
       </section>
     </main>
   </div>
@@ -289,6 +451,12 @@
       return params.get('api'); // ожидаем полный URL вида https://....onrender.com/api/drivers
     }
 
+    function getApiBase() {
+      const apiUrl = getApiUrl();
+      if (!apiUrl) return null;
+      return apiUrl.replace(/\/api\/drivers\/?$/i, '').replace(/\/$/, '');
+    }
+
     async function fetchDrivers() {
       const apiUrl = getApiUrl();
       if (!apiUrl) {
@@ -320,6 +488,7 @@
     const startSection = document.getElementById('startSection');
     const formSection = document.getElementById('formSection');
     const successSection = document.getElementById('successSection');
+    const adminSection = document.getElementById('adminSection');
 
     const startOrderBtn = document.getElementById('startOrderBtn');
     const cancelBtn = document.getElementById('cancelBtn');
@@ -422,7 +591,7 @@
     });
 
     function showSection(which){
-      for (const el of [startSection, formSection, successSection]) el.classList.remove('active');
+      for (const el of [startSection, formSection, successSection, adminSection]) el.classList.remove('active');
       which.classList.add('active');
       clearError();
       if (tg) tg.expand();
@@ -526,7 +695,273 @@
       showSection(successSection);
     });
 
+    // =========================
+    // ADD: Admin panel logic
+    // =========================
+
+    const adminBtn = document.getElementById('adminBtn');
+    const adminBackBtn = document.getElementById('adminBackBtn');
+    const adminTopStatus = document.getElementById('adminTopStatus');
+
+    const adminDriversNow = document.getElementById('adminDriversNow');
+    const adminDriversRefreshBtn = document.getElementById('adminDriversRefreshBtn');
+    const adminDriversPlusBtn = document.getElementById('adminDriversPlusBtn');
+    const adminDriversMinusBtn = document.getElementById('adminDriversMinusBtn');
+    const adminDriversSet = document.getElementById('adminDriversSet');
+    const adminDriversSetBtn = document.getElementById('adminDriversSetBtn');
+    const adminDriversMsg = document.getElementById('adminDriversMsg');
+
+    const adminReqStatus = document.getElementById('adminReqStatus');
+    const adminReqLimit = document.getElementById('adminReqLimit');
+    const adminReqRefreshBtn = document.getElementById('adminReqRefreshBtn');
+    const adminReqList = document.getElementById('adminReqList');
+    const adminReqMsg = document.getElementById('adminReqMsg');
+    const adminReqOpenId = document.getElementById('adminReqOpenId');
+    const adminReqOpenBtn = document.getElementById('adminReqOpenBtn');
+
+    const adminReqDetailsCard = document.getElementById('adminReqDetailsCard');
+    const adminReqDetailsId = document.getElementById('adminReqDetailsId');
+    const adminReqDetailsText = document.getElementById('adminReqDetailsText');
+    const adminReqDetailsMsg = document.getElementById('adminReqDetailsMsg');
+
+    function initDataHeader() {
+      const initData = tg?.initData || "";
+      return { "X-Tg-Init-Data": initData };
+    }
+
+    async function apiFetch(path, opts = {}) {
+      const base = getApiBase();
+      if (!base) throw new Error("API не задан (нет параметра api в URL).");
+      if (!tg?.initData) throw new Error("Откройте админку внутри Telegram.");
+
+      const headers = Object.assign(
+        { "Content-Type": "application/json" },
+        opts.headers || {},
+        initDataHeader()
+      );
+
+      const res = await fetch(base + path, { ...opts, headers, cache: "no-store" });
+      let data = null;
+      try { data = await res.json(); } catch (e) {}
+      if (!res.ok) {
+        const msg = data?.detail || data?.error || (`HTTP ${res.status}`);
+        throw new Error(msg);
+      }
+      return data;
+    }
+
+    async function checkAdmin() {
+      try {
+        await apiFetch("/api/admin/me");
+        adminBtn.style.display = "block";
+      } catch (e) {
+        adminBtn.style.display = "none";
+      }
+    }
+
+    async function adminDriversGet() {
+      adminDriversMsg.textContent = "";
+      const baseDriversUrl = getApiUrl();
+      if (!baseDriversUrl) {
+        adminDriversMsg.textContent = "API не задан.";
+        return;
+      }
+      const r = await fetch(baseDriversUrl, { cache: "no-store" });
+      const j = await r.json();
+      const n = parseInt(j.drivers_on_line, 10);
+      adminDriversNow.value = Number.isFinite(n) ? String(n) : "0";
+      adminDriversSet.value = Number.isFinite(n) ? String(n) : "0";
+    }
+
+    async function adminDriversSetValue(n) {
+      adminDriversMsg.textContent = "";
+      const data = await apiFetch("/api/admin/drivers", {
+        method: "POST",
+        body: JSON.stringify({ drivers_on_line: Math.max(0, parseInt(n, 10) || 0) })
+      });
+      adminDriversNow.value = String(data.drivers_on_line ?? 0);
+      adminDriversSet.value = String(data.drivers_on_line ?? 0);
+      adminDriversMsg.textContent = "Сохранено.";
+    }
+
+    function fmtReq(r) {
+      const created = r.created_at ? new Date(r.created_at).toLocaleString() : "";
+      const user = (r.tg_username ? ("@" + r.tg_username) : (r.tg_full_name || "—"));
+      const maps = r.yandex_link ? `\nКарта: ${r.yandex_link}` : "";
+      return `#${r.id} | ${created} | ${r.status}
+Пользователь: ${user}
+Телефон: ${r.phone_formatted || r.phone || "—"}
+Марка: ${r.car_brand || "—"}
+Адрес: ${r.address || "—"}${maps}`;
+    }
+
+    async function loadRequests() {
+      adminReqMsg.textContent = "";
+      adminReqList.innerHTML = "";
+
+      const status = adminReqStatus.value;
+      const limit = parseInt(adminReqLimit.value || "20", 10);
+
+      const q = new URLSearchParams();
+      q.set("limit", String(limit));
+      if (status) q.set("status", status);
+
+      const data = await apiFetch("/api/admin/requests?" + q.toString());
+      const items = data.items || [];
+
+      if (!items.length) {
+        adminReqMsg.textContent = "Заявок нет.";
+        return;
+      }
+
+      items.forEach(r => {
+        const div = document.createElement("div");
+        div.className = "item";
+        div.innerHTML = `
+          <div class="itemHead">
+            <div><b>#${r.id}</b><span class="pill">${r.status}</span></div>
+            <div class="hint" style="margin:0; opacity:.85;">${r.created_at ? new Date(r.created_at).toLocaleString() : ""}</div>
+          </div>
+          <div class="mono">${fmtReq(r)}</div>
+          <div class="btnRow">
+            <button class="smallbtn primary" type="button" data-open="${r.id}">Открыть</button>
+            <button class="smallbtn" type="button" data-setst="in_work" data-id="${r.id}">В работу</button>
+            <button class="smallbtn" type="button" data-setst="done" data-id="${r.id}">Готово</button>
+            <button class="smallbtn danger" type="button" data-setst="cancel" data-id="${r.id}">Отмена</button>
+          </div>
+        `;
+        adminReqList.appendChild(div);
+      });
+    }
+
+    async function openRequest(id) {
+      adminReqDetailsMsg.textContent = "";
+      const data = await apiFetch(`/api/admin/requests/${id}`);
+      const r = data.item;
+
+      adminReqDetailsId.textContent = `#${r.id}`;
+      adminReqDetailsText.textContent =
+        fmtReq(r) + "\n\nPayload:\n" + JSON.stringify(r.payload_json || {}, null, 2);
+
+      adminReqDetailsCard.style.display = "block";
+      adminReqDetailsCard.scrollIntoView({ behavior: "smooth", block: "start" });
+    }
+
+    async function setReqStatus(id, status) {
+      await apiFetch(`/api/admin/requests/${id}/status`, {
+        method: "POST",
+        body: JSON.stringify({ status })
+      });
+    }
+
+    adminBtn.addEventListener("click", async () => {
+      showSection(adminSection);
+      adminTopStatus.textContent = "Загрузка…";
+      try {
+        await apiFetch("/api/admin/me");
+        adminTopStatus.textContent = "Доступ подтверждён.";
+        await adminDriversGet();
+        await loadRequests();
+      } catch (e) {
+        adminTopStatus.textContent = "Нет доступа: " + e.message;
+      }
+    });
+
+    adminBackBtn.addEventListener("click", () => showSection(startSection));
+
+    adminDriversRefreshBtn.addEventListener("click", async () => {
+      try {
+        await adminDriversGet();
+        adminDriversMsg.textContent = "Обновлено.";
+      } catch (e) {
+        adminDriversMsg.textContent = "Ошибка: " + e.message;
+      }
+    });
+
+    adminDriversSetBtn.addEventListener("click", async () => {
+      try {
+        await adminDriversSetValue(adminDriversSet.value);
+      } catch (e) {
+        adminDriversMsg.textContent = "Ошибка: " + e.message;
+      }
+    });
+
+    adminDriversPlusBtn.addEventListener("click", async () => {
+      try {
+        const cur = parseInt(adminDriversNow.value || "0", 10) || 0;
+        await adminDriversSetValue(cur + 1);
+      } catch (e) {
+        adminDriversMsg.textContent = "Ошибка: " + e.message;
+      }
+    });
+
+    adminDriversMinusBtn.addEventListener("click", async () => {
+      try {
+        const cur = parseInt(adminDriversNow.value || "0", 10) || 0;
+        await adminDriversSetValue(Math.max(0, cur - 1));
+      } catch (e) {
+        adminDriversMsg.textContent = "Ошибка: " + e.message;
+      }
+    });
+
+    adminReqRefreshBtn.addEventListener("click", async () => {
+      try {
+        await loadRequests();
+      } catch (e) {
+        adminReqMsg.textContent = "Ошибка: " + e.message;
+      }
+    });
+
+    adminReqOpenBtn.addEventListener("click", async () => {
+      const id = parseInt(adminReqOpenId.value || "", 10);
+      if (!id) return;
+      try {
+        await openRequest(id);
+      } catch (e) {
+        adminReqMsg.textContent = "Ошибка: " + e.message;
+      }
+    });
+
+    adminReqList.addEventListener("click", async (e) => {
+      const btn = e.target.closest("button");
+      if (!btn) return;
+
+      const openId = btn.getAttribute("data-open");
+      if (openId) {
+        try { await openRequest(openId); } catch (err) { adminReqMsg.textContent = "Ошибка: " + err.message; }
+        return;
+      }
+
+      const st = btn.getAttribute("data-setst");
+      const id = btn.getAttribute("data-id");
+      if (st && id) {
+        try {
+          await setReqStatus(id, st);
+          await loadRequests();
+        } catch (err) {
+          adminReqMsg.textContent = "Ошибка: " + err.message;
+        }
+      }
+    });
+
+    adminReqDetailsCard.addEventListener("click", async (e) => {
+      const btn = e.target.closest("button[data-setst]");
+      if (!btn) return;
+      const st = btn.getAttribute("data-setst");
+      const id = (adminReqDetailsId.textContent || "").replace("#", "");
+      try {
+        await setReqStatus(id, st);
+        adminReqDetailsMsg.textContent = "Статус обновлён: " + st;
+        await openRequest(id);
+        await loadRequests();
+      } catch (err) {
+        adminReqDetailsMsg.textContent = "Ошибка: " + err.message;
+      }
+    });
+
+    // init
     resetForm();
+    checkAdmin();
   </script>
 </body>
 </html>
