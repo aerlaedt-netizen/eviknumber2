@@ -35,7 +35,6 @@ HTTP: aiohttp.ClientSession | None = None
 
 ALLOWED_STATUSES = {"new", "in_work", "done", "cancel"}
 
-# менеджерские ожидания ввода (чтобы без FSM)
 MANAGER_AWAIT: dict[int, str] = {}   # user_id -> "setdrivers"
 
 START_TEXT = """Ваш надежный помощник в любой ситуации на дороге — бот службы эвакуации!
@@ -112,7 +111,7 @@ def _user_tag_from_row(r: dict) -> str:
     return r.get("tg_full_name") or "—"
 
 
-# ---------------- DB (только заявки/статусы) ----------------
+# ---------------- DB (requests/statuses) ----------------
 
 async def db_init():
     global DB_POOL
@@ -209,11 +208,11 @@ async def db_set_status(req_id: int, status: str) -> bool:
         return res.split()[-1] != "0"
 
 
-# ---------------- HTTP (к вашему API сервису) ----------------
+# ---------------- HTTP (to API service) ----------------
 
 async def http_init():
     global HTTP
-    HTTP = aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=10))
+    HTTP = aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=15))
 
 
 async def http_close():
@@ -231,16 +230,24 @@ async def api_get_drivers() -> int:
 
 
 async def api_set_drivers(n: int) -> int:
-    url = API_BASE_URL.rstrip("/") + "/api/admin/drivers"
+    # ВАЖНО: бот ходит в bot-endpoint, авторизация через X-Admin-Token
+    url = API_BASE_URL.rstrip("/") + "/api/bot/drivers"
     headers = {"X-Admin-Token": API_ADMIN_TOKEN or ""}
+
     async with HTTP.post(url, json={"drivers_on_line": int(n)}, headers=headers) as r:
-        j = await r.json()
+        text = await r.text()
+        try:
+            j = json.loads(text)
+        except Exception:
+            j = {"raw": text}
+
         if r.status != 200:
             raise RuntimeError(f"API error {r.status}: {j}")
-        return int(j["drivers_on_line"])
+
+        return int(j.get("drivers_on_line", 0))
 
 
-# ---------------- UI helpers (панель/список/детали) ----------------
+# ---------------- UI helpers ----------------
 
 def build_manager_panel_text(drivers: int | None = None) -> str:
     lines = ["Панель менеджера"]
@@ -364,11 +371,10 @@ async def safe_edit_message(cb: CallbackQuery, text: str, reply_markup: InlineKe
         await cb.message.answer(text, reply_markup=reply_markup)
 
 
-# ---------------- /start (менеджеру панель, пользователю webapp) ----------------
+# ---------------- /start ----------------
 
 @dp.message(CommandStart())
 async def start(message: Message) -> None:
-    # менеджеру сразу панель
     if is_dispatcher(message):
         try:
             drivers = await api_get_drivers()
@@ -377,7 +383,6 @@ async def start(message: Message) -> None:
         await message.answer(build_manager_panel_text(drivers), reply_markup=build_manager_panel_kb())
         return
 
-    # обычный пользователь
     if not WEBAPP_URL or not API_BASE_URL:
         await message.answer("Сервис временно недоступен (не заданы WEBAPP_URL/API_BASE_URL).")
         return
@@ -402,7 +407,7 @@ async def start(message: Message) -> None:
     await message.answer("Откройте мини‑апп и отправьте заявку.", reply_markup=kb)
 
 
-# ---------------- Команды менеджера (можно оставить, но теперь не обязаны) ----------------
+# ---------------- Manager commands ----------------
 
 @dp.message(Command("panel"))
 async def panel_cmd(message: Message) -> None:
@@ -413,22 +418,6 @@ async def panel_cmd(message: Message) -> None:
     except Exception:
         drivers = None
     await message.answer(build_manager_panel_text(drivers), reply_markup=build_manager_panel_kb())
-
-
-@dp.message(Command("help"))
-async def help_cmd(message: Message) -> None:
-    if not is_dispatcher(message):
-        return
-    await message.answer(
-        "Менеджер:\n"
-        "Основное — через кнопку «Панель».\n\n"
-        "Команды (если нужно):\n"
-        "/panel\n"
-        "/requests [n]\n"
-        "/request <id>\n"
-        "/setstatus <id> <new|in_work|done|cancel>\n"
-        "/drivers /setdrivers /adddrivers /deldrivers\n"
-    )
 
 
 @dp.message(Command("requests"))
@@ -495,77 +484,6 @@ async def setstatus_cmd(message: Message, command: CommandObject) -> None:
         return
     await message.answer(f"Готово. Заявка #{req_id} теперь со статусом: {status}")
 
-
-@dp.message(Command("drivers"))
-async def drivers_cmd(message: Message) -> None:
-    if not is_dispatcher(message):
-        return
-    try:
-        drivers = await api_get_drivers()
-        await message.answer(f"Водителей на линии сейчас: {drivers}")
-    except Exception:
-        await message.answer("Не удалось получить число водителей из API.")
-
-
-@dp.message(Command("setdrivers"))
-async def setdrivers_cmd(message: Message, command: CommandObject) -> None:
-    if not is_dispatcher(message):
-        return
-    arg = (command.args or "").strip()
-    if not arg:
-        await message.answer("Использование: /setdrivers <число>")
-        return
-    try:
-        n = int(arg)
-        if n < 0:
-            n = 0
-        new_n = await api_set_drivers(n)
-        await message.answer(f"Готово. Водителей на линии теперь: {new_n}")
-    except Exception:
-        await message.answer("Ошибка установки. Проверьте API_BASE_URL и API_ADMIN_TOKEN.")
-
-
-@dp.message(Command("adddrivers"))
-async def adddrivers_cmd(message: Message, command: CommandObject) -> None:
-    if not is_dispatcher(message):
-        return
-    arg = (command.args or "").strip()
-    if not arg:
-        await message.answer("Использование: /adddrivers <число>")
-        return
-    try:
-        delta = int(arg)
-        if delta < 0:
-            await message.answer("Нужно число ≥ 0.")
-            return
-        cur = await api_get_drivers()
-        new_n = await api_set_drivers(cur + delta)
-        await message.answer(f"Готово. Водителей на линии теперь: {new_n}")
-    except Exception:
-        await message.answer("Ошибка. Проверьте API_BASE_URL и API_ADMIN_TOKEN.")
-
-
-@dp.message(Command("deldrivers"))
-async def deldrivers_cmd(message: Message, command: CommandObject) -> None:
-    if not is_dispatcher(message):
-        return
-    arg = (command.args or "").strip()
-    if not arg:
-        await message.answer("Использование: /deldrivers <число>")
-        return
-    try:
-        delta = int(arg)
-        if delta < 0:
-            await message.answer("Нужно число ≥ 0.")
-            return
-        cur = await api_get_drivers()
-        new_n = await api_set_drivers(max(0, cur - delta))
-        await message.answer(f"Готово. Водителей на линии теперь: {new_n}")
-    except Exception:
-        await message.answer("Ошибка. Проверьте API_BASE_URL и API_ADMIN_TOKEN.")
-
-
-# ---------------- Inline callbacks: панель/список/детали/статусы (редактируем то же сообщение) ----------------
 
 @dp.callback_query(F.data == "panel:home")
 async def cb_panel_home(cb: CallbackQuery) -> None:
@@ -650,83 +568,6 @@ async def cb_panel_drivers_set(cb: CallbackQuery) -> None:
     await cb.message.answer("Отправьте число водителей одним сообщением (например: 7).")
 
 
-@dp.callback_query(F.data.startswith("req:"))
-async def cb_req_details(cb: CallbackQuery) -> None:
-    if not is_dispatcher_user_id(cb.from_user.id):
-        await cb.answer("Недоступно", show_alert=True)
-        return
-
-    try:
-        _, req_id_s, limit_s = cb.data.split(":", 2)
-        req_id = int(req_id_s)
-        limit = int(limit_s)
-        limit = max(1, min(50, limit))
-    except Exception:
-        await cb.answer("Ошибка данных", show_alert=True)
-        return
-
-    r = await db_get_request(req_id)
-    if not r:
-        await cb.answer("Заявка не найдена", show_alert=True)
-        return
-
-    await cb.answer()
-    await safe_edit_message(cb, format_request_details(r), reply_markup=build_request_details_kb(req_id, limit))
-
-
-@dp.callback_query(F.data.startswith("back:"))
-async def cb_back_to_list(cb: CallbackQuery) -> None:
-    if not is_dispatcher_user_id(cb.from_user.id):
-        await cb.answer("Недоступно", show_alert=True)
-        return
-
-    try:
-        _, limit_s = cb.data.split(":", 1)
-        limit = int(limit_s)
-        limit = max(1, min(50, limit))
-    except Exception:
-        limit = 10
-
-    items = await db_list_requests(limit)
-    await cb.answer()
-    await safe_edit_message(cb, build_requests_list_text(items), reply_markup=build_requests_list_kb(items, limit))
-
-
-@dp.callback_query(F.data.startswith("st:"))
-async def cb_set_status(cb: CallbackQuery) -> None:
-    if not is_dispatcher_user_id(cb.from_user.id):
-        await cb.answer("Недоступно", show_alert=True)
-        return
-
-    try:
-        _, req_id_s, status, limit_s = cb.data.split(":", 3)
-        req_id = int(req_id_s)
-        limit = int(limit_s)
-        limit = max(1, min(50, limit))
-    except Exception:
-        await cb.answer("Ошибка данных", show_alert=True)
-        return
-
-    if status not in ALLOWED_STATUSES:
-        await cb.answer("Неверный статус", show_alert=True)
-        return
-
-    ok = await db_set_status(req_id, status)
-    if not ok:
-        await cb.answer("Заявка не найдена", show_alert=True)
-        return
-
-    r = await db_get_request(req_id)
-    if not r:
-        await cb.answer("Заявка не найдена", show_alert=True)
-        return
-
-    await cb.answer("Статус обновлён")
-    await safe_edit_message(cb, format_request_details(r), reply_markup=build_request_details_kb(req_id, limit))
-
-
-# ---------------- Менеджер: ввод числа для "установить водителей" без команд ----------------
-
 @dp.message(F.text)
 async def manager_number_input(message: Message) -> None:
     if not is_dispatcher(message):
@@ -751,7 +592,7 @@ async def manager_number_input(message: Message) -> None:
         await message.answer("Ошибка установки. Проверьте API_BASE_URL и API_ADMIN_TOKEN.")
 
 
-# ---------------- WebApp заявки ----------------
+# ---------------- WebApp orders ----------------
 
 @dp.message(F.web_app_data)
 async def webapp_data_handler(message: Message) -> None:
@@ -805,7 +646,10 @@ async def webapp_data_handler(message: Message) -> None:
     await message.bot.send_message(TARGET_USER_ID, "\n".join(lines))
 
     last_request_ts[uid] = now
-    await message.answer("Заявка отправлена, ожидайте, с вами свяжется диспетчер, обычно до 5 минут. По истечению этого времени, наберите по номеру +7 (965) 747-07-27")
+    await message.answer(
+        "Заявка отправлена, ожидайте, с вами свяжется диспетчер, обычно до 5 минут. "
+        "По истечению этого времени, наберите по номеру +7 (965) 747-07-27"
+    )
 
 
 async def main() -> None:
