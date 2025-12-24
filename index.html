@@ -162,7 +162,7 @@
     .successTitle{ margin: 0 0 8px; font-size: 28px; }
     .successText{ margin: 0 0 18px; color: var(--muted); font-size: 16px; }
 
-    /* admin styles */
+    /* === Admin styles (в вашем стиле) === */
     .adminCard{
       margin-top: 14px;
       text-align: left;
@@ -227,7 +227,11 @@
       border-color: rgba(46,166,255,.35);
       background: rgba(46,166,255,.10);
     }
-    .mutedLine{ color: rgba(255,255,255,.60); font-size: 13px; margin-top: 8px; }
+    .mutedLine{
+      color: rgba(255,255,255,.60);
+      font-size: 13px;
+      margin-top: 8px;
+    }
   </style>
 </head>
 
@@ -426,6 +430,7 @@
       } catch (e) {}
     }
 
+    // ===== Drivers (client) =====
     const driversLineEl = document.getElementById('driversLine');
     const driversStatusEl = document.getElementById('driversStatus');
 
@@ -444,7 +449,7 @@
 
     function getApiUrl() {
       const params = new URLSearchParams(window.location.search);
-      return params.get('api'); // https://.../api/drivers
+      return params.get('api'); // ожидаем полный URL вида https://.../api/drivers
     }
 
     function getApiBase() {
@@ -468,7 +473,7 @@
         const n = parseInt(j.drivers_on_line, 10);
         setDriversText(Number.isFinite(n) ? n : NaN);
 
-        // убрали "Обновлено ..."
+        // убрали строку "Обновлено..."
         driversStatusEl.textContent = '';
       } catch (e) {
         driversStatusEl.textContent = 'Не удалось обновить данные (проверьте Render/API).';
@@ -479,6 +484,7 @@
     fetchDrivers();
     setInterval(fetchDrivers, 5000);
 
+    // ===== Sections =====
     const startSection = document.getElementById('startSection');
     const formSection = document.getElementById('formSection');
     const successSection = document.getElementById('successSection');
@@ -498,8 +504,9 @@
     const submitBtn = document.getElementById('submitBtn');
     const errorBox = document.getElementById('error');
 
+    // ===== Phone formatter =====
     const PHONE_PREFIX = "+7 (9";
-    let phoneAfterDigits = "";
+    let phoneAfterDigits = ""; // 0..9 digits after "79"
 
     function moveCaretToEnd() {
       requestAnimationFrame(() => {
@@ -584,9 +591,7 @@
     });
 
     function showSection(which){
-      for (const el of [startSection, formSection, successSection, adminSection]) {
-        el.classList.remove('active');
-      }
+      [startSection, formSection, successSection, adminSection].forEach(el => el.classList.remove('active'));
       which.classList.add('active');
       clearError();
       if (tg) tg.expand();
@@ -690,7 +695,7 @@
       showSection(successSection);
     });
 
-    // ===== Admin panel =====
+    // ===== Admin =====
     const adminBtn = document.getElementById('adminBtn');
     const adminBackBtn = document.getElementById('adminBackBtn');
     const adminTopStatus = document.getElementById('adminTopStatus');
@@ -722,8 +727,11 @@
       adminBtn.style.display = (inTg && hasApi) ? "block" : "none";
     }
 
-    function initDataHeader() {
-      return { "X-Tg-Init-Data": tg?.initData || "" };
+    function withInitData(path) {
+      const initData = tg?.initData || "";
+      if (!initData) return path;
+      const sep = path.includes("?") ? "&" : "?";
+      return path + sep + "tg_init_data=" + encodeURIComponent(initData);
     }
 
     async function apiFetch(path, opts = {}) {
@@ -731,15 +739,13 @@
       if (!base) throw new Error("API не задан (нет параметра api в URL).");
       if (!tg?.initData) throw new Error("Откройте внутри Telegram.");
 
-      const headers = Object.assign(
-        { "Content-Type": "application/json" },
-        opts.headers || {},
-        initDataHeader()
-      );
+      const headers = Object.assign({ "Content-Type": "application/json" }, opts.headers || {});
+      const url = base + withInitData(path);
 
-      const res = await fetch(base + path, { ...opts, headers, cache: "no-store" });
+      const res = await fetch(url, { ...opts, headers, cache: "no-store" });
       let data = null;
       try { data = await res.json(); } catch (e) {}
+
       if (!res.ok) throw new Error(data?.detail || data?.error || (`HTTP ${res.status}`));
       return data;
     }
@@ -747,6 +753,7 @@
     async function adminDriversGet() {
       adminDriversMsg.textContent = '';
       const apiUrl = getApiUrl();
+      if (!apiUrl) throw new Error("api не задан");
       const r = await fetch(apiUrl, { cache: "no-store" });
       if (!r.ok) throw new Error(`HTTP ${r.status}`);
       const j = await r.json();
@@ -927,6 +934,7 @@
       }
     });
 
+    // init
     resetForm();
     showAdminButtonIfPossible();
   </script>
