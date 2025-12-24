@@ -36,7 +36,7 @@
       width: 100%;
       display: grid;
       place-items: center;
-      padding:
+      ## padding:
         calc(20px + env(safe-area-inset-top))
         calc(20px + env(safe-area-inset-right))
         calc(20px + env(safe-area-inset-bottom))
@@ -90,7 +90,7 @@
       margin-bottom: 6px;
     }
 
-    input, select, textarea{
+    input, select{
       width: 100%;
       padding: 12px 12px;
       border-radius: 14px;
@@ -162,7 +162,7 @@
     .successTitle{ margin: 0 0 8px; font-size: 28px; }
     .successText{ margin: 0 0 18px; color: var(--muted); font-size: 16px; }
 
-    /* === ADD: admin list styles (минимально, в вашем стиле) === */
+    /* admin styles */
     .adminCard{
       margin-top: 14px;
       text-align: left;
@@ -241,13 +241,12 @@
           <h1>Вызов эвакуатора</h1>
           <p>Нажмите «Заказать машину», укажите телефон, марку и адрес (или геолокацию) — заявка уйдёт диспетчеру.</p>
 
-          <!-- Показываем количество водителей -->
           <p id="driversLine" class="hint" style="margin-top:10px;">Водителей на линии: —</p>
           <div id="driversStatus" class="hint" style="margin-top:6px; opacity:.8;"></div>
 
           <div class="actions">
             <button id="startOrderBtn" class="btn" type="button">Заказать машину</button>
-            <!-- ADD: Админка (появится только если вы админ) -->
+            <!-- Админ-панель: кнопка появится если открыто в Telegram и есть ?api= -->
             <button id="adminBtn" class="btn secondary" type="button" style="display:none;">Админ-панель</button>
           </div>
 
@@ -319,10 +318,10 @@
           <div class="hint">Можно закрыть окно и вернуться в чат</div>
         </div>
 
-        <!-- ADD: ADMIN -->
+        <!-- ADMIN -->
         <div id="adminSection" class="section">
           <h1>Админ-панель</h1>
-          <p id="adminTopStatus">Проверяем доступ…</p>
+          <p id="adminTopStatus">Загрузка…</p>
 
           <div class="actions" style="margin-top:10px;">
             <button id="adminBackBtn" class="btn secondary" type="button">Назад</button>
@@ -433,11 +432,10 @@
 
     function setDriversText(n) {
       driversLineEl.textContent = Number.isFinite(n)
-        ? `Водителей на линии: ${n}`
+        ## ? `Водителей на линии: ${n}`
         : 'Водителей на линии: —';
     }
 
-    // 1) Быстро показать число из URL (?drivers=...)
     function renderDriversFromUrl() {
       const params = new URLSearchParams(window.location.search);
       const v = params.get('drivers');
@@ -445,10 +443,9 @@
       if (Number.isFinite(n)) setDriversText(n);
     }
 
-    // 2) Автообновление через API (?api=... передаёт бот)
     function getApiUrl() {
       const params = new URLSearchParams(window.location.search);
-      return params.get('api'); // ожидаем полный URL вида https://....onrender.com/api/drivers
+      return params.get('api'); // полный URL вида https://.../api/drivers
     }
 
     function getApiBase() {
@@ -457,511 +454,4 @@
       return apiUrl.replace(/\/api\/drivers\/?$/i, '').replace(/\/$/, '');
     }
 
-    async function fetchDrivers() {
-      const apiUrl = getApiUrl();
-      if (!apiUrl) {
-        driversStatusEl.textContent = 'API не задан (нет параметра api в URL).';
-        return;
-      }
-
-      try {
-        const r = await fetch(apiUrl, { cache: "no-store" });
-        if (!r.ok) throw new Error(`HTTP ${r.status}`);
-        const j = await r.json();
-
-        const n = parseInt(j.drivers_on_line, 10);
-        setDriversText(Number.isFinite(n) ? n : NaN);
-
-        const t = j.updated_at ? new Date(j.updated_at * 1000) : null;
-        driversStatusEl.textContent = t
-          ? `Обновлено: ${t.toLocaleTimeString()}`
-          : 'Обновлено';
-      } catch (e) {
-        driversStatusEl.textContent = 'Не удалось обновить данные (проверьте Render/API).';
-      }
-    }
-
-    renderDriversFromUrl();
-    fetchDrivers();
-    setInterval(fetchDrivers, 5000); // каждые 5 секунд
-
-    const startSection = document.getElementById('startSection');
-    const formSection = document.getElementById('formSection');
-    const successSection = document.getElementById('successSection');
-    const adminSection = document.getElementById('adminSection');
-
-    const startOrderBtn = document.getElementById('startOrderBtn');
-    const cancelBtn = document.getElementById('cancelBtn');
-    const newOrderBtn = document.getElementById('newOrderBtn');
-    const backToStartBtn = document.getElementById('backToStartBtn');
-
-    const addressEl = document.getElementById('address');
-    const carBrandEl = document.getElementById('carBrand');
-    const geoEl = document.getElementById('geo');
-    const phoneEl = document.getElementById('phone');
-
-    const geoBtn = document.getElementById('geoBtn');
-    const submitBtn = document.getElementById('submitBtn');
-    const errorBox = document.getElementById('error');
-
-    // ===== Телефон: +7 (9... + удаление цифр (а не скобок/дефисов) + курсор в конец =====
-    const PHONE_PREFIX = "+7 (9";
-    let phoneAfterDigits = ""; // 0..9 цифр ПОСЛЕ "79"
-
-    function moveCaretToEnd() {
-      requestAnimationFrame(() => {
-        const end = phoneEl.value.length;
-        phoneEl.setSelectionRange(end, end);
-      });
-    }
-
-    function formatPhoneDigits(after) {
-      const d = (after || "").replace(/\D/g, "").slice(0, 9);
-      const a = d.slice(0, 2);
-      const b = d.slice(2, 5);
-      const c = d.slice(5, 7);
-      const e = d.slice(7, 9);
-
-      let s = PHONE_PREFIX;
-      if (a.length === 0) return s;
-      if (a.length === 1) return s + a;
-
-      s += a + ")";
-      if (b.length) s += " " + b;
-      if (c.length) s += "-" + c;
-      if (e.length) s += "-" + e;
-      return s;
-    }
-
-    function renderPhone() {
-      phoneEl.value = formatPhoneDigits(phoneAfterDigits);
-      if (!phoneEl.value.startsWith(PHONE_PREFIX)) phoneEl.value = PHONE_PREFIX;
-      moveCaretToEnd();
-    }
-
-    function parseAfterDigitsFromValue(v) {
-      const digits = (v || "").replace(/\D/g, "");
-      let after = "";
-      if (digits.startsWith("79")) after = digits.slice(2);
-      else if (digits.startsWith("7")) after = digits.slice(1);
-      else after = digits;
-      return after.slice(0, 9);
-    }
-
-    function initPhone() {
-      phoneAfterDigits = phoneAfterDigits || "";
-      renderPhone();
-    }
-
-    ["focus", "click", "mouseup", "touchend"].forEach(evt => {
-      phoneEl.addEventListener(evt, () => {
-        if (!phoneEl.value || !phoneEl.value.startsWith(PHONE_PREFIX)) {
-          phoneAfterDigits = "";
-          renderPhone();
-        } else {
-          moveCaretToEnd();
-        }
-      });
-    });
-
-    phoneEl.addEventListener("keydown", (e) => {
-      if (e.key === "Backspace") {
-        e.preventDefault();
-
-        if (phoneAfterDigits.length === 0) {
-          phoneEl.value = PHONE_PREFIX;
-          moveCaretToEnd();
-          return;
-        }
-
-        phoneAfterDigits = phoneAfterDigits.slice(0, -1);
-        renderPhone();
-        return;
-      }
-
-      if (e.key === "ArrowLeft" || e.key === "Home") {
-        e.preventDefault();
-        moveCaretToEnd();
-      }
-    });
-
-    phoneEl.addEventListener("input", () => {
-      phoneAfterDigits = parseAfterDigitsFromValue(phoneEl.value);
-      renderPhone();
-    });
-
-    function showSection(which){
-      for (const el of [startSection, formSection, successSection, adminSection]) el.classList.remove('active');
-      which.classList.add('active');
-      clearError();
-      if (tg) tg.expand();
-    }
-
-    function showError(msg){
-      errorBox.textContent = msg;
-      errorBox.style.display = 'block';
-    }
-    function clearError(){
-      errorBox.textContent = '';
-      errorBox.style.display = 'none';
-    }
-
-    function resetForm(){
-      addressEl.value = '';
-      carBrandEl.value = '';
-      geoEl.value = '';
-      phoneAfterDigits = "";
-      phoneEl.value = PHONE_PREFIX;
-      clearError();
-    }
-
-    startOrderBtn.addEventListener('click', () => {
-      showSection(formSection);
-      initPhone();
-      phoneEl.focus();
-    });
-
-    cancelBtn.addEventListener('click', () => {
-      resetForm();
-      showSection(startSection);
-    });
-
-    newOrderBtn.addEventListener('click', () => {
-      resetForm();
-      showSection(formSection);
-      initPhone();
-      phoneEl.focus();
-    });
-
-    backToStartBtn.addEventListener('click', () => showSection(startSection));
-
-    geoBtn.addEventListener('click', () => {
-      clearError();
-
-      if (!navigator.geolocation) {
-        showError('Геолокация не поддерживается на этом устройстве/вебвью.');
-        return;
-      }
-
-      geoBtn.disabled = true;
-      const oldText = geoBtn.textContent;
-      geoBtn.textContent = '...';
-
-      navigator.geolocation.getCurrentPosition(
-        (pos) => {
-          const lat = pos.coords.latitude.toFixed(6);
-          const lon = pos.coords.longitude.toFixed(6);
-          geoEl.value = `${lat}, ${lon}`;
-          geoBtn.disabled = false;
-          geoBtn.textContent = oldText;
-        },
-        () => {
-          showError('Не удалось получить геолокацию. Разрешите доступ к местоположению и попробуйте снова.');
-          geoBtn.disabled = false;
-          geoBtn.textContent = oldText;
-        },
-        { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
-      );
-    });
-
-    submitBtn.addEventListener('click', () => {
-      clearError();
-
-      const phoneDigits = ("79" + phoneAfterDigits).replace(/\D/g, "");
-
-      const payload = {
-        type: "evac_min",
-        phone: phoneDigits,
-        phoneFormatted: phoneEl.value.trim(),
-        carBrand: carBrandEl.value.trim() || null,
-        address: addressEl.value.trim() || null,
-        geo: geoEl.value.trim() || null,
-        ts: Date.now()
-      };
-
-      if (phoneDigits.length !== 11 || !phoneDigits.startsWith("79")) {
-        return showError('Введите телефон полностью в формате +7 (9XX) XXX-XX-XX');
-      }
-      if (!payload.carBrand) return showError('Укажите марку автомобиля.');
-      if (!payload.address && !payload.geo) return showError('Укажите адрес или нажмите «Определить».');
-
-      if (tg) {
-        tg.sendData(JSON.stringify(payload));
-      } else {
-        alert("Отправлено:\n" + JSON.stringify(payload, null, 2));
-      }
-
-      resetForm();
-      showSection(successSection);
-    });
-
-    // =========================
-    // ADD: Admin panel logic
-    // =========================
-
-    const adminBtn = document.getElementById('adminBtn');
-    const adminBackBtn = document.getElementById('adminBackBtn');
-    const adminTopStatus = document.getElementById('adminTopStatus');
-
-    const adminDriversNow = document.getElementById('adminDriversNow');
-    const adminDriversRefreshBtn = document.getElementById('adminDriversRefreshBtn');
-    const adminDriversPlusBtn = document.getElementById('adminDriversPlusBtn');
-    const adminDriversMinusBtn = document.getElementById('adminDriversMinusBtn');
-    const adminDriversSet = document.getElementById('adminDriversSet');
-    const adminDriversSetBtn = document.getElementById('adminDriversSetBtn');
-    const adminDriversMsg = document.getElementById('adminDriversMsg');
-
-    const adminReqStatus = document.getElementById('adminReqStatus');
-    const adminReqLimit = document.getElementById('adminReqLimit');
-    const adminReqRefreshBtn = document.getElementById('adminReqRefreshBtn');
-    const adminReqList = document.getElementById('adminReqList');
-    const adminReqMsg = document.getElementById('adminReqMsg');
-    const adminReqOpenId = document.getElementById('adminReqOpenId');
-    const adminReqOpenBtn = document.getElementById('adminReqOpenBtn');
-
-    const adminReqDetailsCard = document.getElementById('adminReqDetailsCard');
-    const adminReqDetailsId = document.getElementById('adminReqDetailsId');
-    const adminReqDetailsText = document.getElementById('adminReqDetailsText');
-    const adminReqDetailsMsg = document.getElementById('adminReqDetailsMsg');
-
-    function initDataHeader() {
-      const initData = tg?.initData || "";
-      return { "X-Tg-Init-Data": initData };
-    }
-
-    async function apiFetch(path, opts = {}) {
-      const base = getApiBase();
-      if (!base) throw new Error("API не задан (нет параметра api в URL).");
-      if (!tg?.initData) throw new Error("Откройте админку внутри Telegram.");
-
-      const headers = Object.assign(
-        { "Content-Type": "application/json" },
-        opts.headers || {},
-        initDataHeader()
-      );
-
-      const res = await fetch(base + path, { ...opts, headers, cache: "no-store" });
-      let data = null;
-      try { data = await res.json(); } catch (e) {}
-      if (!res.ok) {
-        const msg = data?.detail || data?.error || (`HTTP ${res.status}`);
-        throw new Error(msg);
-      }
-      return data;
-    }
-
-    async function checkAdmin() {
-      try {
-        await apiFetch("/api/admin/me");
-        adminBtn.style.display = "block";
-      } catch (e) {
-        adminBtn.style.display = "none";
-      }
-    }
-
-    async function adminDriversGet() {
-      adminDriversMsg.textContent = "";
-      const baseDriversUrl = getApiUrl();
-      if (!baseDriversUrl) {
-        adminDriversMsg.textContent = "API не задан.";
-        return;
-      }
-      const r = await fetch(baseDriversUrl, { cache: "no-store" });
-      const j = await r.json();
-      const n = parseInt(j.drivers_on_line, 10);
-      adminDriversNow.value = Number.isFinite(n) ? String(n) : "0";
-      adminDriversSet.value = Number.isFinite(n) ? String(n) : "0";
-    }
-
-    async function adminDriversSetValue(n) {
-      adminDriversMsg.textContent = "";
-      const data = await apiFetch("/api/admin/drivers", {
-        method: "POST",
-        body: JSON.stringify({ drivers_on_line: Math.max(0, parseInt(n, 10) || 0) })
-      });
-      adminDriversNow.value = String(data.drivers_on_line ?? 0);
-      adminDriversSet.value = String(data.drivers_on_line ?? 0);
-      adminDriversMsg.textContent = "Сохранено.";
-    }
-
-    function fmtReq(r) {
-      const created = r.created_at ? new Date(r.created_at).toLocaleString() : "";
-      const user = (r.tg_username ? ("@" + r.tg_username) : (r.tg_full_name || "—"));
-      const maps = r.yandex_link ? `\nКарта: ${r.yandex_link}` : "";
-      return `#${r.id} | ${created} | ${r.status}
-Пользователь: ${user}
-Телефон: ${r.phone_formatted || r.phone || "—"}
-Марка: ${r.car_brand || "—"}
-Адрес: ${r.address || "—"}${maps}`;
-    }
-
-    async function loadRequests() {
-      adminReqMsg.textContent = "";
-      adminReqList.innerHTML = "";
-
-      const status = adminReqStatus.value;
-      const limit = parseInt(adminReqLimit.value || "20", 10);
-
-      const q = new URLSearchParams();
-      q.set("limit", String(limit));
-      if (status) q.set("status", status);
-
-      const data = await apiFetch("/api/admin/requests?" + q.toString());
-      const items = data.items || [];
-
-      if (!items.length) {
-        adminReqMsg.textContent = "Заявок нет.";
-        return;
-      }
-
-      items.forEach(r => {
-        const div = document.createElement("div");
-        div.className = "item";
-        div.innerHTML = `
-          <div class="itemHead">
-            <div><b>#${r.id}</b><span class="pill">${r.status}</span></div>
-            <div class="hint" style="margin:0; opacity:.85;">${r.created_at ? new Date(r.created_at).toLocaleString() : ""}</div>
-          </div>
-          <div class="mono">${fmtReq(r)}</div>
-          <div class="btnRow">
-            <button class="smallbtn primary" type="button" data-open="${r.id}">Открыть</button>
-            <button class="smallbtn" type="button" data-setst="in_work" data-id="${r.id}">В работу</button>
-            <button class="smallbtn" type="button" data-setst="done" data-id="${r.id}">Готово</button>
-            <button class="smallbtn danger" type="button" data-setst="cancel" data-id="${r.id}">Отмена</button>
-          </div>
-        `;
-        adminReqList.appendChild(div);
-      });
-    }
-
-    async function openRequest(id) {
-      adminReqDetailsMsg.textContent = "";
-      const data = await apiFetch(`/api/admin/requests/${id}`);
-      const r = data.item;
-
-      adminReqDetailsId.textContent = `#${r.id}`;
-      adminReqDetailsText.textContent =
-        fmtReq(r) + "\n\nPayload:\n" + JSON.stringify(r.payload_json || {}, null, 2);
-
-      adminReqDetailsCard.style.display = "block";
-      adminReqDetailsCard.scrollIntoView({ behavior: "smooth", block: "start" });
-    }
-
-    async function setReqStatus(id, status) {
-      await apiFetch(`/api/admin/requests/${id}/status`, {
-        method: "POST",
-        body: JSON.stringify({ status })
-      });
-    }
-
-    adminBtn.addEventListener("click", async () => {
-      showSection(adminSection);
-      adminTopStatus.textContent = "Загрузка…";
-      try {
-        await apiFetch("/api/admin/me");
-        adminTopStatus.textContent = "Доступ подтверждён.";
-        await adminDriversGet();
-        await loadRequests();
-      } catch (e) {
-        adminTopStatus.textContent = "Нет доступа: " + e.message;
-      }
-    });
-
-    adminBackBtn.addEventListener("click", () => showSection(startSection));
-
-    adminDriversRefreshBtn.addEventListener("click", async () => {
-      try {
-        await adminDriversGet();
-        adminDriversMsg.textContent = "Обновлено.";
-      } catch (e) {
-        adminDriversMsg.textContent = "Ошибка: " + e.message;
-      }
-    });
-
-    adminDriversSetBtn.addEventListener("click", async () => {
-      try {
-        await adminDriversSetValue(adminDriversSet.value);
-      } catch (e) {
-        adminDriversMsg.textContent = "Ошибка: " + e.message;
-      }
-    });
-
-    adminDriversPlusBtn.addEventListener("click", async () => {
-      try {
-        const cur = parseInt(adminDriversNow.value || "0", 10) || 0;
-        await adminDriversSetValue(cur + 1);
-      } catch (e) {
-        adminDriversMsg.textContent = "Ошибка: " + e.message;
-      }
-    });
-
-    adminDriversMinusBtn.addEventListener("click", async () => {
-      try {
-        const cur = parseInt(adminDriversNow.value || "0", 10) || 0;
-        await adminDriversSetValue(Math.max(0, cur - 1));
-      } catch (e) {
-        adminDriversMsg.textContent = "Ошибка: " + e.message;
-      }
-    });
-
-    adminReqRefreshBtn.addEventListener("click", async () => {
-      try {
-        await loadRequests();
-      } catch (e) {
-        adminReqMsg.textContent = "Ошибка: " + e.message;
-      }
-    });
-
-    adminReqOpenBtn.addEventListener("click", async () => {
-      const id = parseInt(adminReqOpenId.value || "", 10);
-      if (!id) return;
-      try {
-        await openRequest(id);
-      } catch (e) {
-        adminReqMsg.textContent = "Ошибка: " + e.message;
-      }
-    });
-
-    adminReqList.addEventListener("click", async (e) => {
-      const btn = e.target.closest("button");
-      if (!btn) return;
-
-      const openId = btn.getAttribute("data-open");
-      if (openId) {
-        try { await openRequest(openId); } catch (err) { adminReqMsg.textContent = "Ошибка: " + err.message; }
-        return;
-      }
-
-      const st = btn.getAttribute("data-setst");
-      const id = btn.getAttribute("data-id");
-      if (st && id) {
-        try {
-          await setReqStatus(id, st);
-          await loadRequests();
-        } catch (err) {
-          adminReqMsg.textContent = "Ошибка: " + err.message;
-        }
-      }
-    });
-
-    adminReqDetailsCard.addEventListener("click", async (e) => {
-      const btn = e.target.closest("button[data-setst]");
-      if (!btn) return;
-      const st = btn.getAttribute("data-setst");
-      const id = (adminReqDetailsId.textContent || "").replace("#", "");
-      try {
-        await setReqStatus(id, st);
-        adminReqDetailsMsg.textContent = "Статус обновлён: " + st;
-        await openRequest(id);
-        await loadRequests();
-      } catch (err) {
-        adminReqDetailsMsg.textContent = "Ошибка: " + err.message;
-      }
-    });
-
-    // init
-    resetForm();
-    checkAdmin();
-  </script>
-</body>
-</html>
+    ## // У
