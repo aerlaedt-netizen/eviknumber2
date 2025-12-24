@@ -3,23 +3,22 @@ import hmac
 import json
 import time
 import hashlib
-from typing import Any, Optional
+from typing import Any
 from contextlib import asynccontextmanager
 
 import asyncpg
 from fastapi import FastAPI, HTTPException, Header, Query
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel, Field
+from pydantic import BaseModel
 
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 DATABASE_URL = os.getenv("DATABASE_URL")
 TARGET_USER_ID = int(os.getenv("TARGET_USER_ID", "0"))
-API_ADMIN_TOKEN = os.getenv("API_ADMIN_TOKEN")  # token for bot/service calls and optional fallback admin
+API_ADMIN_TOKEN = os.getenv("API_ADMIN_TOKEN")  # token for bot/service calls (and optional fallback)
 
 POOL: asyncpg.Pool | None = None
 
 
-# ====== Models ======
 class DriversPayload(BaseModel):
     drivers_on_line: int
 
@@ -28,24 +27,6 @@ class StatusPayload(BaseModel):
     status: str
 
 
-class BotCreateRequestPayload(BaseModel):
-    # telegram identity
-    tg_user_id: Optional[int] = None
-    tg_username: Optional[str] = None
-    tg_full_name: Optional[str] = None
-
-    # order fields
-    phone: Optional[str] = None
-    phone_formatted: Optional[str] = None
-    car_brand: Optional[str] = None
-    address: Optional[str] = None
-    geo: Optional[str] = None
-
-    # original payload from mini app (any JSON)
-    payload_json: dict[str, Any] = Field(default_factory=dict)
-
-
-# ====== Telegram initData verify ======
 def _parse_qs(qs: str) -> dict[str, str]:
     out: dict[str, str] = {}
     for part in (qs or "").split("&"):
@@ -57,7 +38,7 @@ def _parse_qs(qs: str) -> dict[str, str]:
 
 
 def _tg_webapp_check_init_data(init_data: str, bot_token: str) -> dict[str, Any]:
-    """Verify Telegram WebApp initData signature and expiration. Return parsed user dict."""
+    """Verify Telegram WebApp initData signature and expiration. Return user dict."""
     from urllib.parse import unquote
 
     data = _parse_qs(init_data)
@@ -75,7 +56,6 @@ def _tg_webapp_check_init_data(init_data: str, bot_token: str) -> dict[str, Any]
     auth_date = int(data.get("auth_date", "0") or "0")
     if not auth_date:
         raise HTTPException(401, "No auth_date")
-    # 24h validity
     if time.time() - auth_date > 86400:
         raise HTTPException(401, "initData expired")
 
@@ -91,12 +71,11 @@ def _tg_webapp_check_init_data(init_data: str, bot_token: str) -> dict[str, Any]
     return user
 
 
-# ====== Auth helpers ======
 def _require_admin(init_data: str | None, admin_token: str | None) -> dict[str, Any]:
     """
-    Admin auth:
+    Admin auth for mini app:
     1) Telegram WebApp initData (manager == TARGET_USER_ID)
-    2) Optional fallback token API_ADMIN_TOKEN via query admin_token (if you still want it)
+    2) Optional fallback token API_ADMIN_TOKEN via query admin_token
     """
     if init_data:
         if not BOT_TOKEN:
@@ -109,7 +88,7 @@ def _require_admin(init_data: str | None, admin_token: str | None) -> dict[str, 
             raise HTTPException(403, "Not an admin")
         return user
 
-    # optional fallback (can be removed if you want ONLY Telegram)
+    # optional fallback (можно убрать, если хочешь только Telegram)
     if API_ADMIN_TOKEN and admin_token == API_ADMIN_TOKEN:
         if not TARGET_USER_ID:
             raise HTTPException(500, "TARGET_USER_ID not set")
@@ -120,10 +99,9 @@ def _require_admin(init_data: str | None, admin_token: str | None) -> dict[str, 
 
 def _require_service_token(admin_token_q: str | None, admin_token_h: str | None) -> None:
     """
-    Service/bot auth (no Telegram initData):
-    Bot must send API_ADMIN_TOKEN either as:
-      - query: ?admin_token=...
+    Service/bot auth:
       - header: X-Admin-Token: ...
+      - query : ?admin_token=...
     """
     token = admin_token_h or admin_token_q
     if not API_ADMIN_TOKEN:
@@ -132,7 +110,6 @@ def _require_service_token(admin_token_q: str | None, admin_token_h: str | None)
         raise HTTPException(401, "Unauthorized")
 
 
-# ====== DB helpers ======
 async def _get_setting(key: str, default: Any) -> Any:
     async with POOL.acquire() as con:
         row = await con.fetchrow("SELECT value_json FROM settings WHERE key=$1", key)
@@ -154,21 +131,6 @@ async def _set_setting(key: str, value: Any) -> Any:
             json.dumps(value, ensure_ascii=False),
         )
     return value
-
-
-def _yandex_link_from_geo(geo: str | None) -> str | None:
-    if not geo:
-        return None
-    try:
-        # expected "lat, lon"
-        parts = [p.strip() for p in geo.split(",")]
-        if len(parts) != 2:
-            return None
-        lat = float(parts[0])
-        lon = float(parts[1])
-        return f"https://yandex.ru/maps/?pt={lon},{lat}&z=16&l=map"
-    except Exception:
-        return None
 
 
 @asynccontextmanager
@@ -219,7 +181,6 @@ async def lifespan(app: FastAPI):
         POOL = None
 
 
-# ====== App ======
 app = FastAPI(title="Tow API", lifespan=lifespan)
 
 app.add_middleware(
@@ -246,7 +207,6 @@ async def health():
     return {"ok": True}
 
 
-# ====== Public ======
 @app.get("/api/drivers")
 async def get_drivers():
     v = await _get_setting("drivers_on_line", 0)
@@ -257,44 +217,22 @@ async def get_drivers():
     return {"drivers_on_line": n}
 
 
-# ====== Bot -> API (создание заявки) ======
-@app.post("/api/bot/requests")
-async def bot_create_request(
-    payload: BotCreateRequestPayload,
+# ==== BOT endpoint (исправление твоей ошибки) ====
+@app.post("/api/bot/drivers")
+async def bot_set_drivers(
+    payload: DriversPayload,
     admin_token: str | None = Query(default=None, alias="admin_token"),
     x_admin_token: str | None = Header(default=None, alias="X-Admin-Token"),
 ):
     _require_service_token(admin_token, x_admin_token)
 
-    yandex_link = _yandex_link_from_geo(payload.geo)
-
-    async with POOL.acquire() as con:
-        row = await con.fetchrow(
-            """
-            INSERT INTO requests(
-              tg_user_id, tg_username, tg_full_name,
-              phone, phone_formatted, car_brand, address, geo, yandex_link,
-              payload_json, status
-            )
-            VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,'new')
-            RETURNING id, created_at, status
-            """,
-            payload.tg_user_id,
-            payload.tg_username,
-            payload.tg_full_name,
-            payload.phone,
-            payload.phone_formatted,
-            payload.car_brand,
-            payload.address,
-            payload.geo,
-            yandex_link,
-            json.dumps(payload.payload_json, ensure_ascii=False),
-        )
-
-    return {"ok": True, "item": dict(row)}
+    n = int(payload.drivers_on_line)
+    if n < 0:
+        n = 0
+    await _set_setting("drivers_on_line", n)
+    return {"drivers_on_line": n}
 
 
-# ====== Admin (mini app) ======
 @app.get("/api/admin/me")
 async def admin_me(
     x_tg_init_data: str | None = Header(default=None, alias="X-Tg-Init-Data"),
@@ -309,12 +247,20 @@ async def admin_me(
 @app.post("/api/admin/drivers")
 async def set_drivers(
     payload: DriversPayload,
+    # miniapp auth:
     x_tg_init_data: str | None = Header(default=None, alias="X-Tg-Init-Data"),
     tg_init_data: str | None = Query(default=None, alias="tg_init_data"),
+    # optional fallback:
     admin_token: str | None = Query(default=None, alias="admin_token"),
+    # (на всякий случай) если кто-то всё же пошлёт X-Admin-Token сюда:
+    x_admin_token: str | None = Header(default=None, alias="X-Admin-Token"),
 ):
-    init_data = x_tg_init_data or tg_init_data
-    _require_admin(init_data, admin_token)
+    # Если пришёл X-Admin-Token — разрешаем сервисную авторизацию
+    if x_admin_token:
+        _require_service_token(admin_token, x_admin_token)
+    else:
+        init_data = x_tg_init_data or tg_init_data
+        _require_admin(init_data, admin_token)
 
     n = int(payload.drivers_on_line)
     if n < 0:
