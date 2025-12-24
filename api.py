@@ -4,29 +4,19 @@ import json
 import time
 import hashlib
 from typing import Any
+from contextlib import asynccontextmanager
 
 import asyncpg
 from fastapi import FastAPI, HTTPException, Header, Query
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
-BOT_TOKEN = os.getenv("BOT_TOKEN")  # нужен для проверки initData
+BOT_TOKEN = os.getenv("BOT_TOKEN")
 DATABASE_URL = os.getenv("DATABASE_URL")
 TARGET_USER_ID = int(os.getenv("TARGET_USER_ID", "0"))
+API_ADMIN_TOKEN = os.getenv("API_ADMIN_TOKEN")  # optional fallback
 
-# optional fallback: оставить токен (например, для worker.py или тестов)
-API_ADMIN_TOKEN = os.getenv("API_ADMIN_TOKEN")
-
-app = FastAPI(title="Tow API")
 POOL: asyncpg.Pool | None = None
-
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],  # можно сузить до вашего GitHub Pages домена
-    allow_credentials=False,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
 
 
 class DriversPayload(BaseModel):
@@ -48,10 +38,6 @@ def _parse_qs(qs: str) -> dict[str, str]:
 
 
 def _tg_webapp_check_init_data(init_data: str, bot_token: str) -> dict[str, Any]:
-    """
-    Проверка initData по алгоритму Telegram WebApp.
-    Возвращает dict user, если валидно.
-    """
     from urllib.parse import unquote
 
     data = _parse_qs(init_data)
@@ -85,7 +71,6 @@ def _tg_webapp_check_init_data(init_data: str, bot_token: str) -> dict[str, Any]
 
 
 def _require_admin(x_tg_init_data: str | None, x_admin_token: str | None) -> dict[str, Any]:
-    # 1) Telegram initData (основной способ)
     if x_tg_init_data:
         if not BOT_TOKEN:
             raise HTTPException(500, "BOT_TOKEN is required for initData auth")
@@ -97,7 +82,6 @@ def _require_admin(x_tg_init_data: str | None, x_admin_token: str | None) -> dic
             raise HTTPException(403, "Not an admin")
         return user
 
-    # 2) fallback токеном (если хотите оставить)
     if API_ADMIN_TOKEN and x_admin_token == API_ADMIN_TOKEN:
         if not TARGET_USER_ID:
             raise HTTPException(500, "TARGET_USER_ID not set")
@@ -129,23 +113,20 @@ async def _set_setting(key: str, value: Any) -> Any:
     return value
 
 
-@app.on_event("startup")
-async def on_startup():
+@asynccontextmanager
+async def lifespan(app: FastAPI):
     global POOL
     if not DATABASE_URL:
         raise RuntimeError("DATABASE_URL not set")
     POOL = await asyncpg.create_pool(DATABASE_URL, min_size=1, max_size=5)
 
     async with POOL.acquire() as con:
-        # settings table
         await con.execute("""
         CREATE TABLE IF NOT EXISTS settings (
           key TEXT PRIMARY KEY,
           value_json JSONB NOT NULL
         );
         """)
-
-        # requests table (worker тоже создаёт, но пусть будет страховка)
         await con.execute("""
         CREATE TABLE IF NOT EXISTS requests (
           id           BIGSERIAL PRIMARY KEY,
@@ -166,8 +147,6 @@ async def on_startup():
           status        TEXT NOT NULL DEFAULT 'new'
         );
         """)
-
-        # init drivers_on_line if absent
         row = await con.fetchrow("SELECT 1 FROM settings WHERE key='drivers_on_line'")
         if not row:
             await con.execute(
@@ -175,13 +154,22 @@ async def on_startup():
                 json.dumps(0),
             )
 
+    yield
 
-@app.on_event("shutdown")
-async def on_shutdown():
-    global POOL
     if POOL:
         await POOL.close()
         POOL = None
+
+
+app = FastAPI(title="Tow API", lifespan=lifespan)
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=False,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 
 @app.get("/health")
@@ -189,7 +177,6 @@ async def health():
     return {"ok": True}
 
 
-# ---------- public ----------
 @app.get("/api/drivers")
 async def get_drivers():
     v = await _get_setting("drivers_on_line", 0)
@@ -200,7 +187,6 @@ async def get_drivers():
     return {"drivers_on_line": n}
 
 
-# ---------- admin auth helper ----------
 @app.get("/api/admin/me")
 async def admin_me(
     x_tg_init_data: str | None = Header(default=None, alias="X-Tg-Init-Data"),
@@ -210,7 +196,6 @@ async def admin_me(
     return {"ok": True, "user": {"id": user.get("id"), "username": user.get("username")}}
 
 
-# ---------- admin: drivers ----------
 @app.post("/api/admin/drivers")
 async def set_drivers(
     payload: DriversPayload,
@@ -225,7 +210,6 @@ async def set_drivers(
     return {"drivers_on_line": n}
 
 
-# ---------- admin: requests ----------
 @app.get("/api/admin/requests")
 async def admin_list_requests(
     limit: int = Query(20, ge=1, le=100),
@@ -254,7 +238,6 @@ async def admin_list_requests(
             """,
             *args
         )
-
     return {"items": [dict(r) for r in rows]}
 
 
@@ -291,3 +274,9 @@ async def admin_set_request_status(
         row = await con.fetchrow("SELECT id, created_at, status FROM requests WHERE id=$1", req_id)
 
     return {"item": dict(row)}
+
+
+if __name__ == "__main__":
+    import uvicorn
+    port = int(os.getenv("PORT", "10000"))
+    uvicorn.run(app, host="0.0.0.0", port=port)
