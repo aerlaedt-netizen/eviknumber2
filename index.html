@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
   <title>Эвакуатор — Mini App</title>
   <script src="https://telegram.org/js/telegram-web-app.js"></script>
+
   <style>
     :root{--bg:#0f1115;--card:#171a21;--text:#e9edf5;--muted:#a7b0c0;--accent:#2ea6ff;--accent2:#1c7ed6;--danger:#ff5c7a;--radius:18px}
     *{box-sizing:border-box}
@@ -219,30 +220,75 @@
   const tg = window.Telegram?.WebApp;
   if (tg) { tg.ready(); tg.expand(); }
 
-  // ==== URL params / tokens ====
+  // ===== URL / tokens =====
   const params = new URLSearchParams(location.search);
 
-  // 1) api=... обязателен для запросов
-  function getApiUrl(){ return params.get("api"); }
+  function getApiUrl(){ return params.get("api"); } // full https://.../api/drivers
   function getApiBase(){
     const apiUrl = getApiUrl();
     if (!apiUrl) return null;
     return apiUrl.replace(/\/api\/drivers\/?$/i, '').replace(/\/$/, '');
   }
 
-  // 2) admin_token (для менеджера вне Telegram)
   const ADMIN_TOKEN_KEY = "tow_admin_token";
   const tokenFromUrl = params.get("admin_token");
   if (tokenFromUrl) {
     localStorage.setItem(ADMIN_TOKEN_KEY, tokenFromUrl);
-    // убираем токен из URL (чтобы не светился)
     params.delete("admin_token");
     const newQs = params.toString();
     history.replaceState({}, "", location.pathname + (newQs ? "?" + newQs : ""));
   }
   function getAdminToken(){ return localStorage.getItem(ADMIN_TOKEN_KEY) || ""; }
 
-  // ==== Drivers on line ====
+  // ===== helpers: wait for Telegram initData =====
+  function getTgInitDataNow() {
+    return (tg && typeof tg.initData === "string") ? tg.initData : "";
+  }
+
+  async function waitForTgInitData(timeoutMs = 2000) {
+    const start = Date.now();
+    while (Date.now() - start < timeoutMs) {
+      const v = getTgInitDataNow();
+      if (v && v.length > 0) return v;
+      await new Promise(r => setTimeout(r, 150));
+    }
+    return "";
+  }
+
+  function authQuery(path, initData, adminToken) {
+    const q = [];
+    if (initData) q.push("tg_init_data=" + encodeURIComponent(initData));
+    else if (adminToken) q.push("admin_token=" + encodeURIComponent(adminToken));
+    if (!q.length) return path;
+    return path + (path.includes("?") ? "&" : "?") + q.join("&");
+  }
+
+  async function apiFetch(path, opts = {}) {
+    const base = getApiBase();
+    if (!base) throw new Error("API не задан (нет параметра api в URL).");
+
+    // если мы внутри Telegram — подождём initData
+    let initData = "";
+    if (tg) initData = await waitForTgInitData(2500);
+
+    const adminToken = getAdminToken();
+    if (!initData && !adminToken) {
+      // ВАЖНО: больше не спамим 401 в логи без авторизации
+      throw new Error("Нет авторизации: откройте внутри Telegram (менеджер) или используйте admin_token.");
+    }
+
+    const url = base + authQuery(path, initData, adminToken);
+    const headers = Object.assign({ "Content-Type": "application/json" }, opts.headers || {});
+    const res = await fetch(url, { ...opts, headers, cache:"no-store" });
+
+    let data = null;
+    try { data = await res.json(); } catch(e) {}
+
+    if (!res.ok) throw new Error(data?.detail || (`HTTP ${res.status}`));
+    return data;
+  }
+
+  // ===== Drivers on line =====
   const driversLineEl = document.getElementById('driversLine');
   const driversStatusEl = document.getElementById('driversStatus');
 
@@ -268,7 +314,7 @@
   fetchDrivers();
   setInterval(fetchDrivers, 5000);
 
-  // ==== Sections ====
+  // ===== Sections =====
   const startSection = document.getElementById('startSection');
   const formSection = document.getElementById('formSection');
   const successSection = document.getElementById('successSection');
@@ -281,7 +327,7 @@
     clearError();
   }
 
-  // ==== Form ====
+  // ===== Form =====
   const startOrderBtn = document.getElementById('startOrderBtn');
   const cancelBtn = document.getElementById('cancelBtn');
   const newOrderBtn = document.getElementById('newOrderBtn');
@@ -385,7 +431,7 @@
     resetForm(); showSection(successSection);
   });
 
-  // ==== Admin auth / API ====
+  // ===== Admin =====
   const adminBtn = document.getElementById("adminBtn");
   const adminBackBtn = document.getElementById("adminBackBtn");
   const adminTopStatus = document.getElementById("adminTopStatus");
@@ -411,41 +457,12 @@
   const adminReqDetailsText = document.getElementById('adminReqDetailsText');
   const adminReqDetailsMsg = document.getElementById('adminReqDetailsMsg');
 
-  function authQuery(path){
-    const initData = tg?.initData || "";
-    const token = getAdminToken();
-
-    const q = [];
-    if (initData) q.push("tg_init_data=" + encodeURIComponent(initData));
-    else if (token) q.push("admin_token=" + encodeURIComponent(token));
-
-    if (!q.length) return path;
-    return path + (path.includes("?") ? "&" : "?") + q.join("&");
-  }
-
-  async function apiFetch(path, opts={}){
-    const base = getApiBase();
-    if(!base) throw new Error("API не задан (нет параметра api в URL).");
-
-    const url = base + authQuery(path);
-    const headers = Object.assign({ "Content-Type": "application/json" }, opts.headers || {});
-    const res = await fetch(url, { ...opts, headers, cache:"no-store" });
-
-    let data=null;
-    try{ data = await res.json(); }catch(e){}
-    if(!res.ok) throw new Error(data?.detail || (`HTTP ${res.status}`));
-    return data;
-  }
-
-  // Показываем админку ТОЛЬКО менеджеру:
   async function refreshAdminVisibility(){
     adminBtn.style.display = "none";
-    const base = getApiBase();
-    if(!base) return;
     try{
       await apiFetch("/api/admin/me");
       adminBtn.style.display = "block";
-    }catch(e){
+    } catch(e) {
       adminBtn.style.display = "none";
     }
   }
@@ -463,11 +480,14 @@
 
   async function adminDriversSetValue(n){
     adminDriversMsg.textContent='';
-    const data = await apiFetch("/api/admin/drivers", { method:"POST", body: JSON.stringify({ drivers_on_line: Math.max(0, parseInt(n,10)||0) }) });
+    const data = await apiFetch("/api/admin/drivers", {
+      method:"POST",
+      body: JSON.stringify({ drivers_on_line: Math.max(0, parseInt(n,10)||0) })
+    });
     adminDriversNow.value = String(data.drivers_on_line ?? 0);
     adminDriversSet.value = String(data.drivers_on_line ?? 0);
     adminDriversMsg.textContent = "Сохранено.";
-    fetchDrivers(); // обновим на главной
+    fetchDrivers();
   }
 
   function fmtReq(r){
@@ -518,12 +538,16 @@
     const data = await apiFetch(`/api/admin/requests/${id}`);
     const r = data.item;
     adminReqDetailsId.textContent = `#${r.id}`;
-    adminReqDetailsText.textContent = fmtReq(r) + "\n\nPayload:\n" + JSON.stringify(r.payload_json || {}, null, 2);
+    adminReqDetailsText.textContent =
+      fmtReq(r) + "\n\nPayload:\n" + JSON.stringify(r.payload_json || {}, null, 2);
     adminReqDetailsCard.style.display="block";
   }
 
   async function setReqStatus(id, status){
-    await apiFetch(`/api/admin/requests/${id}/status`, { method:"POST", body: JSON.stringify({ status }) });
+    await apiFetch(`/api/admin/requests/${id}/status`, {
+      method:"POST",
+      body: JSON.stringify({ status })
+    });
   }
 
   adminBtn.addEventListener("click", async ()=>{
@@ -586,12 +610,23 @@
     const btn=e.target.closest("button[data-setst]"); if(!btn) return;
     const st=btn.getAttribute("data-setst");
     const id=(adminReqDetailsId.textContent||"").replace("#","");
-    try{ await setReqStatus(id, st); adminReqDetailsMsg.textContent="Статус обновлён: "+st; await openRequest(id); await loadRequests(); }
-    catch(err){ adminReqDetailsMsg.textContent="Ошибка: "+err.message; }
+    try{
+      await setReqStatus(id, st);
+      adminReqDetailsMsg.textContent="Статус обновлён: "+st;
+      await openRequest(id);
+      await loadRequests();
+    }catch(err){
+      adminReqDetailsMsg.textContent="Ошибка: "+err.message;
+    }
   });
 
   resetForm();
+
+  // несколько попыток показать кнопку (из-за того что initData иногда появляется не сразу)
   refreshAdminVisibility();
+  setTimeout(refreshAdminVisibility, 600);
+  setTimeout(refreshAdminVisibility, 1600);
+  setTimeout(refreshAdminVisibility, 3000);
 </script>
 </body>
 </html>
