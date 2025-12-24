@@ -4,939 +4,594 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
   <title>Эвакуатор — Mini App</title>
-
   <script src="https://telegram.org/js/telegram-web-app.js"></script>
-
   <style>
-    :root{
-      --bg: #0f1115;
-      --card: #171a21;
-      --text: #e9edf5;
-      --muted: #a7b0c0;
-      --accent: #2ea6ff;
-      --accent2:#1c7ed6;
-      --danger:#ff5c7a;
-      --border: rgba(255,255,255,.10);
-      --radius: 18px;
-    }
-    * { box-sizing: border-box; }
-
-    html, body{
-      height: 100%;
-      margin: 0;
-      padding: 0;
-      background: var(--bg);
-      color: var(--text);
-      font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
-      overflow-x: hidden;
-    }
-
-    .screen{
-      min-height: 100vh;
-      width: 100%;
-      display: grid;
-      place-items: center;
-      padding:
-        calc(20px + env(safe-area-inset-top))
-        calc(20px + env(safe-area-inset-right))
-        calc(20px + env(safe-area-inset-bottom))
-        calc(20px + env(safe-area-inset-left));
-    }
-
-    .wrap{ width: min(720px, 100%); margin-inline: auto; }
-
-    .card{
-      background: var(--card);
-      border-radius: var(--radius);
-      padding: 28px;
-      box-shadow: 0 14px 40px rgba(0,0,0,.38);
-      border: 1px solid rgba(255,255,255,.08);
-      text-align: center;
-    }
-
-    h1{ margin: 0 0 10px; font-size: 32px; line-height: 1.15; }
-    p{ margin: 0 0 18px; color: var(--muted); font-size: 17px; line-height: 1.55; }
-
-    .btn{
-      width: 100%;
-      border: 0;
-      border-radius: 16px;
-      padding: 16px 18px;
-      background: linear-gradient(180deg, var(--accent), var(--accent2));
-      color: #fff;
-      font-weight: 800;
-      font-size: 17px;
-      cursor: pointer;
-    }
-    .btn.secondary{
-      background: transparent;
-      border: 1px solid rgba(255,255,255,.18);
-      color: var(--text);
-      font-weight: 700;
-    }
-
-    .hint{ margin-top: 12px; font-size: 13px; color: rgba(255,255,255,.55); }
-
-    .section{ display: none; }
-    .section.active{ display: block; }
-
-    .form{ margin-top: 18px; text-align: left; }
-    .grid{ display: grid; grid-template-columns: 1fr; gap: 12px; }
-
-    label{
-      display: block;
-      font-size: 13px;
-      color: rgba(255,255,255,.72);
-      margin-bottom: 6px;
-    }
-
-    input, select{
-      width: 100%;
-      padding: 12px 12px;
-      border-radius: 14px;
-      border: 1px solid rgba(255,255,255,.14);
-      background: rgba(255,255,255,.06);
-      color: var(--text);
-      outline: none;
-      font-size: 16px;
-    }
-    input::placeholder{ color: rgba(255,255,255,.35); }
-
-    .row{
-      display: grid;
-      grid-template-columns: 1fr auto;
-      gap: 10px;
-      align-items: end;
-    }
-
-    .smallbtn{
-      height: 44px;
-      padding: 0 14px;
-      border-radius: 14px;
-      border: 1px solid rgba(255,255,255,.18);
-      background: rgba(255,255,255,.04);
-      color: var(--text);
-      font-weight: 700;
-      cursor: pointer;
-      white-space: nowrap;
-    }
-
-    .actions{
-      margin-top: 14px;
-      display: grid;
-      grid-template-columns: 1fr;
-      gap: 10px;
-    }
-
-    .error{
-      display: none;
-      margin-top: 10px;
-      padding: 10px 12px;
-      border-radius: 14px;
-      border: 1px solid rgba(255,92,122,.35);
-      background: rgba(255,92,122,.12);
-      color: #ffd1db;
-      font-size: 14px;
-      text-align: left;
-    }
-
-    .divider{
-      margin: 16px 0 10px;
-      height: 1px;
-      background: rgba(255,255,255,.08);
-    }
-
-    .okBadge{
-      width: 56px; height: 56px;
-      border-radius: 16px;
-      margin: 0 auto 14px;
-      display: grid;
-      place-items: center;
-      background: rgba(34,197,94,.12);
-      border: 1px solid rgba(34,197,94,.35);
-      color: #a7f3d0;
-      font-weight: 900;
-      font-size: 28px;
-      line-height: 1;
-    }
-    .successTitle{ margin: 0 0 8px; font-size: 28px; }
-    .successText{ margin: 0 0 18px; color: var(--muted); font-size: 16px; }
-
-    /* === Admin styles (в вашем стиле) === */
-    .adminCard{
-      margin-top: 14px;
-      text-align: left;
-      padding: 18px;
-      border-radius: 16px;
-      border: 1px solid rgba(255,255,255,.10);
-      background: rgba(255,255,255,.04);
-    }
-    .adminTitle{
-      margin: 0 0 10px;
-      font-size: 18px;
-      font-weight: 900;
-      text-align: left;
-    }
-    .list{
-      display: flex;
-      flex-direction: column;
-      gap: 10px;
-      margin-top: 12px;
-    }
-    .item{
-      border: 1px solid rgba(255,255,255,.12);
-      border-radius: 14px;
-      padding: 12px;
-      background: rgba(0,0,0,.10);
-    }
-    .itemHead{
-      display:flex;
-      justify-content: space-between;
-      gap: 10px;
-      flex-wrap: wrap;
-      align-items: baseline;
-    }
-    .pill{
-      display:inline-block;
-      padding: 2px 10px;
-      border-radius: 999px;
-      border: 1px solid rgba(255,255,255,.14);
-      color: rgba(255,255,255,.75);
-      font-size: 12px;
-      margin-left: 8px;
-    }
-    .mono{
-      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
-      font-size: 12px;
-      white-space: pre-wrap;
-      word-break: break-word;
-      color: rgba(255,255,255,.80);
-      margin-top: 8px;
-    }
-    .btnRow{
-      display:flex;
-      gap: 8px;
-      flex-wrap: wrap;
-      margin-top: 10px;
-    }
-    .smallbtn.danger{
-      border-color: rgba(255,92,122,.35);
-      background: rgba(255,92,122,.10);
-    }
-    .smallbtn.primary{
-      border-color: rgba(46,166,255,.35);
-      background: rgba(46,166,255,.10);
-    }
-    .mutedLine{
-      color: rgba(255,255,255,.60);
-      font-size: 13px;
-      margin-top: 8px;
-    }
+    :root{--bg:#0f1115;--card:#171a21;--text:#e9edf5;--muted:#a7b0c0;--accent:#2ea6ff;--accent2:#1c7ed6;--danger:#ff5c7a;--radius:18px}
+    *{box-sizing:border-box}
+    html,body{height:100%;margin:0;background:var(--bg);color:var(--text);font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif;overflow-x:hidden}
+    .screen{min-height:100vh;display:grid;place-items:center;padding:calc(20px + env(safe-area-inset-top)) calc(20px + env(safe-area-inset-right)) calc(20px + env(safe-area-inset-bottom)) calc(20px + env(safe-area-inset-left))}
+    .wrap{width:min(720px,100%)}
+    .card{background:var(--card);border-radius:var(--radius);padding:28px;box-shadow:0 14px 40px rgba(0,0,0,.38);border:1px solid rgba(255,255,255,.08);text-align:center}
+    h1{margin:0 0 10px;font-size:32px;line-height:1.15}
+    p{margin:0 0 18px;color:var(--muted);font-size:17px;line-height:1.55}
+    .btn{width:100%;border:0;border-radius:16px;padding:16px 18px;background:linear-gradient(180deg,var(--accent),var(--accent2));color:#fff;font-weight:800;font-size:17px;cursor:pointer}
+    .btn.secondary{background:transparent;border:1px solid rgba(255,255,255,.18);color:var(--text);font-weight:700}
+    .hint{margin-top:12px;font-size:13px;color:rgba(255,255,255,.55)}
+    .section{display:none}.section.active{display:block}
+    .form{margin-top:18px;text-align:left}
+    .grid{display:grid;grid-template-columns:1fr;gap:12px}
+    label{display:block;font-size:13px;color:rgba(255,255,255,.72);margin-bottom:6px}
+    input,select{width:100%;padding:12px;border-radius:14px;border:1px solid rgba(255,255,255,.14);background:rgba(255,255,255,.06);color:var(--text);outline:none;font-size:16px}
+    input::placeholder{color:rgba(255,255,255,.35)}
+    .row{display:grid;grid-template-columns:1fr auto;gap:10px;align-items:end}
+    .smallbtn{height:44px;padding:0 14px;border-radius:14px;border:1px solid rgba(255,255,255,.18);background:rgba(255,255,255,.04);color:var(--text);font-weight:700;cursor:pointer;white-space:nowrap}
+    .actions{margin-top:14px;display:grid;grid-template-columns:1fr;gap:10px}
+    .error{display:none;margin-top:10px;padding:10px 12px;border-radius:14px;border:1px solid rgba(255,92,122,.35);background:rgba(255,92,122,.12);color:#ffd1db;font-size:14px;text-align:left}
+    .divider{margin:16px 0 10px;height:1px;background:rgba(255,255,255,.08)}
+    .okBadge{width:56px;height:56px;border-radius:16px;margin:0 auto 14px;display:grid;place-items:center;background:rgba(34,197,94,.12);border:1px solid rgba(34,197,94,.35);color:#a7f3d0;font-weight:900;font-size:28px}
+    .successTitle{margin:0 0 8px;font-size:28px}
+    .successText{margin:0 0 18px;color:var(--muted);font-size:16px}
+    .adminCard{margin-top:14px;text-align:left;padding:18px;border-radius:16px;border:1px solid rgba(255,255,255,.10);background:rgba(255,255,255,.04)}
+    .adminTitle{margin:0 0 10px;font-size:18px;font-weight:900;text-align:left}
+    .list{display:flex;flex-direction:column;gap:10px;margin-top:12px}
+    .item{border:1px solid rgba(255,255,255,.12);border-radius:14px;padding:12px;background:rgba(0,0,0,.10)}
+    .itemHead{display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;align-items:baseline}
+    .pill{display:inline-block;padding:2px 10px;border-radius:999px;border:1px solid rgba(255,255,255,.14);color:rgba(255,255,255,.75);font-size:12px;margin-left:8px}
+    .mono{font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,"Liberation Mono",monospace;font-size:12px;white-space:pre-wrap;word-break:break-word;color:rgba(255,255,255,.80);margin-top:8px}
+    .btnRow{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}
+    .smallbtn.danger{border-color:rgba(255,92,122,.35);background:rgba(255,92,122,.10)}
+    .smallbtn.primary{border-color:rgba(46,166,255,.35);background:rgba(46,166,255,.10)}
+    .mutedLine{color:rgba(255,255,255,.60);font-size:13px;margin-top:8px}
   </style>
 </head>
 
 <body>
-  <div class="screen">
-    <main class="wrap">
-      <section class="card">
+<div class="screen">
+  <main class="wrap">
+    <section class="card">
 
-        <!-- START -->
-        <div id="startSection" class="section active">
-          <h1>Вызов эвакуатора</h1>
-          <p>Нажмите «Заказать машину», укажите телефон, марку и адрес (или геолокацию) — заявка уйдёт диспетчеру.</p>
+      <div id="startSection" class="section active">
+        <h1>Вызов эвакуатора</h1>
+        <p>Нажмите «Заказать машину», укажите телефон, марку и адрес (или геолокацию) — заявка уйдёт диспетчеру.</p>
 
-          <p id="driversLine" class="hint" style="margin-top:10px;">Водителей на линии: —</p>
-          <div id="driversStatus" class="hint" style="margin-top:6px; opacity:.8;"></div>
+        <p id="driversLine" class="hint" style="margin-top:10px;">Водителей на линии: —</p>
+        <div id="driversStatus" class="hint" style="margin-top:6px; opacity:.8;"></div>
 
-          <div class="actions">
-            <button id="startOrderBtn" class="btn" type="button">Заказать машину</button>
-            <button id="adminBtn" class="btn secondary" type="button" style="display:none;">Админ-панель</button>
-          </div>
-
-          <div class="hint">Mini App в Telegram</div>
+        <div class="actions">
+          <button id="startOrderBtn" class="btn" type="button">Заказать машину</button>
+          <button id="adminBtn" class="btn secondary" type="button" style="display:none;">Админ-панель</button>
         </div>
 
-        <!-- FORM -->
-        <div id="formSection" class="section">
-          <h1>Заявка</h1>
-          <p>Минимум данных: телефон, марка, адрес (или гео).</p>
+        <div class="hint">Mini App в Telegram</div>
+      </div>
 
-          <div class="form">
-            <div class="divider"></div>
+      <div id="formSection" class="section">
+        <h1>Заявка</h1>
+        <p>Минимум данных: телефон, марка, адрес (или гео).</p>
 
-            <div class="grid">
-              <div>
-                <label for="phone">Телефон</label>
-                <input
-                  id="phone"
-                  type="tel"
-                  placeholder="+7 (9__ ) ___-__-__"
-                  autocomplete="tel"
-                  inputmode="numeric"
-                  maxlength="18"
-                />
-                <div class="hint" style="margin-top:8px">Формат: +7 (9XX) XXX-XX-XX</div>
-              </div>
+        <div class="form">
+          <div class="divider"></div>
 
-              <div>
-                <label for="carBrand">Марка автомобиля</label>
-                <input id="carBrand" type="text" placeholder="Например: Toyota" autocomplete="off" />
-              </div>
-
-              <div>
-                <label for="address">Адрес (если удобно — текстом)</label>
-                <input id="address" type="text" placeholder="Город, улица, дом / ориентир" autocomplete="street-address" />
-              </div>
-
-              <div class="row">
-                <div>
-                  <label for="geo">Геолокация (опционально)</label>
-                  <input id="geo" type="text" placeholder="55.7558, 37.6173" inputmode="decimal" />
-                </div>
-                <button id="geoBtn" class="smallbtn" type="button">Определить</button>
-              </div>
+          <div class="grid">
+            <div>
+              <label for="phone">Телефон</label>
+              <input id="phone" type="tel" placeholder="+7 (9__ ) ___-__-__" autocomplete="tel" inputmode="numeric" maxlength="18" />
+              <div class="hint" style="margin-top:8px">Формат: +7 (9XX) XXX-XX-XX</div>
             </div>
 
-            <div class="actions">
-              <button id="submitBtn" class="btn" type="button">Отправить заявку</button>
-              <button id="cancelBtn" class="btn secondary" type="button">Отмена</button>
+            <div>
+              <label for="carBrand">Марка автомобиля</label>
+              <input id="carBrand" type="text" placeholder="Например: Toyota" autocomplete="off" />
             </div>
 
-            <div id="error" class="error"></div>
-            <div class="hint">Отправка через Telegram WebApp</div>
-          </div>
-        </div>
-
-        <!-- SUCCESS -->
-        <div id="successSection" class="section">
-          <div class="okBadge">✓</div>
-          <h2 class="successTitle">Заявка отправлена</h2>
-          <p class="successText">Скоро свяжемся с вами.</p>
-
-          <div class="actions">
-            <button id="newOrderBtn" class="btn" type="button">Новая заявка</button>
-            <button id="backToStartBtn" class="btn secondary" type="button">На главный</button>
-          </div>
-
-          <div class="hint">Можно закрыть окно и вернуться в чат</div>
-        </div>
-
-        <!-- ADMIN -->
-        <div id="adminSection" class="section">
-          <h1>Админ-панель</h1>
-          <p id="adminTopStatus">Загрузка…</p>
-
-          <div class="actions" style="margin-top:10px;">
-            <button id="adminBackBtn" class="btn secondary" type="button">Назад</button>
-          </div>
-
-          <div class="adminCard">
-            <div class="adminTitle">Водители</div>
+            <div>
+              <label for="address">Адрес (если удобно — текстом)</label>
+              <input id="address" type="text" placeholder="Город, улица, дом / ориентир" autocomplete="street-address" />
+            </div>
 
             <div class="row">
               <div>
-                <label>Сейчас на линии</label>
-                <input id="adminDriversNow" type="text" disabled value="—" />
+                <label for="geo">Геолокация (опционально)</label>
+                <input id="geo" type="text" placeholder="55.7558, 37.6173" inputmode="decimal" />
               </div>
-              <button id="adminDriversRefreshBtn" class="smallbtn primary" type="button">Обновить</button>
+              <button id="geoBtn" class="smallbtn" type="button">Определить</button>
             </div>
-
-            <div class="btnRow">
-              <button id="adminDriversPlusBtn" class="smallbtn" type="button">+1</button>
-              <button id="adminDriversMinusBtn" class="smallbtn" type="button">-1</button>
-            </div>
-
-            <div class="row" style="margin-top:10px;">
-              <div>
-                <label for="adminDriversSet">Установить число</label>
-                <input id="adminDriversSet" type="number" min="0" placeholder="Например: 7" />
-              </div>
-              <button id="adminDriversSetBtn" class="smallbtn" type="button">Применить</button>
-            </div>
-
-            <div id="adminDriversMsg" class="mutedLine"></div>
           </div>
 
-          <div class="adminCard">
-            <div class="adminTitle">Заявки</div>
-
-            <div class="grid">
-              <div>
-                <label for="adminReqStatus">Статус</label>
-                <select id="adminReqStatus">
-                  <option value="">Все</option>
-                  <option value="new">new</option>
-                  <option value="in_work">in_work</option>
-                  <option value="done">done</option>
-                  <option value="cancel">cancel</option>
-                </select>
-              </div>
-
-              <div>
-                <label for="adminReqLimit">Лимит</label>
-                <select id="adminReqLimit">
-                  <option value="10">10</option>
-                  <option value="20" selected>20</option>
-                  <option value="50">50</option>
-                  <option value="100">100</option>
-                </select>
-              </div>
-
-              <div class="row">
-                <div>
-                  <label for="adminReqOpenId">Открыть по ID</label>
-                  <input id="adminReqOpenId" type="number" min="1" placeholder="Например: 123" />
-                </div>
-                <button id="adminReqOpenBtn" class="smallbtn" type="button">Открыть</button>
-              </div>
-            </div>
-
-            <div class="actions">
-              <button id="adminReqRefreshBtn" class="btn secondary" type="button">Обновить список</button>
-            </div>
-
-            <div id="adminReqMsg" class="mutedLine"></div>
-            <div id="adminReqList" class="list"></div>
+          <div class="actions">
+            <button id="submitBtn" class="btn" type="button">Отправить заявку</button>
+            <button id="cancelBtn" class="btn secondary" type="button">Отмена</button>
           </div>
 
-          <div class="adminCard" id="adminReqDetailsCard" style="display:none;">
-            <div class="adminTitle">Заявка <span id="adminReqDetailsId" class="mono"></span></div>
-            <div id="adminReqDetailsText" class="mono"></div>
+          <div id="error" class="error"></div>
+          <div class="hint">Отправка через Telegram WebApp</div>
+        </div>
+      </div>
 
-            <div class="btnRow">
-              <button class="smallbtn" data-setst="new" type="button">new</button>
-              <button class="smallbtn" data-setst="in_work" type="button">in_work</button>
-              <button class="smallbtn" data-setst="done" type="button">done</button>
-              <button class="smallbtn danger" data-setst="cancel" type="button">cancel</button>
-            </div>
+      <div id="successSection" class="section">
+        <div class="okBadge">✓</div>
+        <h2 class="successTitle">Заявка отправлена</h2>
+        <p class="successText">Скоро свяжемся с вами.</p>
 
-            <div id="adminReqDetailsMsg" class="mutedLine"></div>
-          </div>
+        <div class="actions">
+          <button id="newOrderBtn" class="btn" type="button">Новая заявка</button>
+          <button id="backToStartBtn" class="btn secondary" type="button">На главный</button>
+        </div>
+      </div>
+
+      <div id="adminSection" class="section">
+        <h1>Админ-панель</h1>
+        <p id="adminTopStatus">Загрузка…</p>
+
+        <div class="actions" style="margin-top:10px;">
+          <button id="adminBackBtn" class="btn secondary" type="button">Назад</button>
         </div>
 
-      </section>
-    </main>
-  </div>
+        <div class="adminCard">
+          <div class="adminTitle">Водители</div>
 
-  <script>
-    const tg = window.Telegram?.WebApp;
+          <div class="row">
+            <div>
+              <label>Сейчас на линии</label>
+              <input id="adminDriversNow" type="text" disabled value="—" />
+            </div>
+            <button id="adminDriversRefreshBtn" class="smallbtn primary" type="button">Обновить</button>
+          </div>
 
-    if (tg) {
-      tg.ready();
-      tg.expand();
-      try {
-        tg.setBackgroundColor('#0f1115');
-        tg.setHeaderColor('#0f1115');
-      } catch (e) {}
-    }
+          <div class="btnRow">
+            <button id="adminDriversPlusBtn" class="smallbtn" type="button">+1</button>
+            <button id="adminDriversMinusBtn" class="smallbtn" type="button">-1</button>
+          </div>
 
-    // ===== Drivers (client) =====
-    const driversLineEl = document.getElementById('driversLine');
-    const driversStatusEl = document.getElementById('driversStatus');
+          <div class="row" style="margin-top:10px;">
+            <div>
+              <label for="adminDriversSet">Установить число</label>
+              <input id="adminDriversSet" type="number" min="0" placeholder="Например: 7" />
+            </div>
+            <button id="adminDriversSetBtn" class="smallbtn" type="button">Применить</button>
+          </div>
 
-    function setDriversText(n) {
-      driversLineEl.textContent = Number.isFinite(n)
-        ? `Водителей на линии: ${n}`
-        : 'Водителей на линии: —';
-    }
+          <div id="adminDriversMsg" class="mutedLine"></div>
+        </div>
 
-    function renderDriversFromUrl() {
-      const params = new URLSearchParams(window.location.search);
-      const v = params.get('drivers');
-      const n = v === null ? NaN : parseInt(v, 10);
-      if (Number.isFinite(n)) setDriversText(n);
-    }
+        <div class="adminCard">
+          <div class="adminTitle">Заявки</div>
 
-    function getApiUrl() {
-      const params = new URLSearchParams(window.location.search);
-      return params.get('api'); // ожидаем полный URL вида https://.../api/drivers
-    }
+          <div class="grid">
+            <div>
+              <label for="adminReqStatus">Статус</label>
+              <select id="adminReqStatus">
+                <option value="">Все</option>
+                <option value="new">new</option>
+                <option value="in_work">in_work</option>
+                <option value="done">done</option>
+                <option value="cancel">cancel</option>
+              </select>
+            </div>
 
-    function getApiBase() {
-      const apiUrl = getApiUrl();
-      if (!apiUrl) return null;
-      return apiUrl.replace(/\/api\/drivers\/?$/i, '').replace(/\/$/, '');
-    }
+            <div>
+              <label for="adminReqLimit">Лимит</label>
+              <select id="adminReqLimit">
+                <option value="10">10</option>
+                <option value="20" selected>20</option>
+                <option value="50">50</option>
+                <option value="100">100</option>
+              </select>
+            </div>
 
-    async function fetchDrivers() {
-      const apiUrl = getApiUrl();
-      if (!apiUrl) {
-        driversStatusEl.textContent = '';
-        return;
-      }
+            <div class="row">
+              <div>
+                <label for="adminReqOpenId">Открыть по ID</label>
+                <input id="adminReqOpenId" type="number" min="1" placeholder="Например: 123" />
+              </div>
+              <button id="adminReqOpenBtn" class="smallbtn" type="button">Открыть</button>
+            </div>
+          </div>
 
-      try {
-        const r = await fetch(apiUrl, { cache: "no-store" });
-        if (!r.ok) throw new Error(`HTTP ${r.status}`);
-        const j = await r.json();
+          <div class="actions">
+            <button id="adminReqRefreshBtn" class="btn secondary" type="button">Обновить список</button>
+          </div>
 
-        const n = parseInt(j.drivers_on_line, 10);
-        setDriversText(Number.isFinite(n) ? n : NaN);
+          <div id="adminReqMsg" class="mutedLine"></div>
+          <div id="adminReqList" class="list"></div>
+        </div>
 
-        // убрали строку "Обновлено..."
-        driversStatusEl.textContent = '';
-      } catch (e) {
-        driversStatusEl.textContent = 'Не удалось обновить данные (проверьте Render/API).';
-      }
-    }
+        <div class="adminCard" id="adminReqDetailsCard" style="display:none;">
+          <div class="adminTitle">Заявка <span id="adminReqDetailsId" class="mono"></span></div>
+          <div id="adminReqDetailsText" class="mono"></div>
 
-    renderDriversFromUrl();
-    fetchDrivers();
-    setInterval(fetchDrivers, 5000);
+          <div class="btnRow">
+            <button class="smallbtn" data-setst="new" type="button">new</button>
+            <button class="smallbtn" data-setst="in_work" type="button">in_work</button>
+            <button class="smallbtn" data-setst="done" type="button">done</button>
+            <button class="smallbtn danger" data-setst="cancel" type="button">cancel</button>
+          </div>
 
-    // ===== Sections =====
-    const startSection = document.getElementById('startSection');
-    const formSection = document.getElementById('formSection');
-    const successSection = document.getElementById('successSection');
-    const adminSection = document.getElementById('adminSection');
+          <div id="adminReqDetailsMsg" class="mutedLine"></div>
+        </div>
+      </div>
 
-    const startOrderBtn = document.getElementById('startOrderBtn');
-    const cancelBtn = document.getElementById('cancelBtn');
-    const newOrderBtn = document.getElementById('newOrderBtn');
-    const backToStartBtn = document.getElementById('backToStartBtn');
+    </section>
+  </main>
+</div>
 
-    const addressEl = document.getElementById('address');
-    const carBrandEl = document.getElementById('carBrand');
-    const geoEl = document.getElementById('geo');
-    const phoneEl = document.getElementById('phone');
+<script>
+  const tg = window.Telegram?.WebApp;
+  if (tg) { tg.ready(); tg.expand(); }
 
-    const geoBtn = document.getElementById('geoBtn');
-    const submitBtn = document.getElementById('submitBtn');
-    const errorBox = document.getElementById('error');
+  // ==== URL params / tokens ====
+  const params = new URLSearchParams(location.search);
 
-    // ===== Phone formatter =====
-    const PHONE_PREFIX = "+7 (9";
-    let phoneAfterDigits = ""; // 0..9 digits after "79"
+  // 1) api=... обязателен для запросов
+  function getApiUrl(){ return params.get("api"); }
+  function getApiBase(){
+    const apiUrl = getApiUrl();
+    if (!apiUrl) return null;
+    return apiUrl.replace(/\/api\/drivers\/?$/i, '').replace(/\/$/, '');
+  }
 
-    function moveCaretToEnd() {
-      requestAnimationFrame(() => {
-        const end = phoneEl.value.length;
-        phoneEl.setSelectionRange(end, end);
-      });
-    }
+  // 2) admin_token (для менеджера вне Telegram)
+  const ADMIN_TOKEN_KEY = "tow_admin_token";
+  const tokenFromUrl = params.get("admin_token");
+  if (tokenFromUrl) {
+    localStorage.setItem(ADMIN_TOKEN_KEY, tokenFromUrl);
+    // убираем токен из URL (чтобы не светился)
+    params.delete("admin_token");
+    const newQs = params.toString();
+    history.replaceState({}, "", location.pathname + (newQs ? "?" + newQs : ""));
+  }
+  function getAdminToken(){ return localStorage.getItem(ADMIN_TOKEN_KEY) || ""; }
 
-    function formatPhoneDigits(after) {
-      const d = (after || "").replace(/\D/g, "").slice(0, 9);
-      const a = d.slice(0, 2);
-      const b = d.slice(2, 5);
-      const c = d.slice(5, 7);
-      const e = d.slice(7, 9);
+  // ==== Drivers on line ====
+  const driversLineEl = document.getElementById('driversLine');
+  const driversStatusEl = document.getElementById('driversStatus');
 
-      let s = PHONE_PREFIX;
-      if (a.length === 0) return s;
-      if (a.length === 1) return s + a;
+  function setDriversText(n){
+    driversLineEl.textContent = Number.isFinite(n) ? `Водителей на линии: ${n}` : 'Водителей на линии: —';
+  }
 
-      s += a + ")";
-      if (b.length) s += " " + b;
-      if (c.length) s += "-" + c;
-      if (e.length) s += "-" + e;
-      return s;
-    }
-
-    function renderPhone() {
-      phoneEl.value = formatPhoneDigits(phoneAfterDigits);
-      if (!phoneEl.value.startsWith(PHONE_PREFIX)) phoneEl.value = PHONE_PREFIX;
-      moveCaretToEnd();
-    }
-
-    function parseAfterDigitsFromValue(v) {
-      const digits = (v || "").replace(/\D/g, "");
-      let after = "";
-      if (digits.startsWith("79")) after = digits.slice(2);
-      else if (digits.startsWith("7")) after = digits.slice(1);
-      else after = digits;
-      return after.slice(0, 9);
-    }
-
-    function initPhone() {
-      phoneAfterDigits = phoneAfterDigits || "";
-      renderPhone();
-    }
-
-    ["focus", "click", "mouseup", "touchend"].forEach(evt => {
-      phoneEl.addEventListener(evt, () => {
-        if (!phoneEl.value || !phoneEl.value.startsWith(PHONE_PREFIX)) {
-          phoneAfterDigits = "";
-          renderPhone();
-        } else {
-          moveCaretToEnd();
-        }
-      });
-    });
-
-    phoneEl.addEventListener("keydown", (e) => {
-      if (e.key === "Backspace") {
-        e.preventDefault();
-
-        if (phoneAfterDigits.length === 0) {
-          phoneEl.value = PHONE_PREFIX;
-          moveCaretToEnd();
-          return;
-        }
-
-        phoneAfterDigits = phoneAfterDigits.slice(0, -1);
-        renderPhone();
-        return;
-      }
-
-      if (e.key === "ArrowLeft" || e.key === "Home") {
-        e.preventDefault();
-        moveCaretToEnd();
-      }
-    });
-
-    phoneEl.addEventListener("input", () => {
-      phoneAfterDigits = parseAfterDigitsFromValue(phoneEl.value);
-      renderPhone();
-    });
-
-    function showSection(which){
-      [startSection, formSection, successSection, adminSection].forEach(el => el.classList.remove('active'));
-      which.classList.add('active');
-      clearError();
-      if (tg) tg.expand();
-    }
-
-    function showError(msg){
-      errorBox.textContent = msg;
-      errorBox.style.display = 'block';
-    }
-    function clearError(){
-      errorBox.textContent = '';
-      errorBox.style.display = 'none';
-    }
-
-    function resetForm(){
-      addressEl.value = '';
-      carBrandEl.value = '';
-      geoEl.value = '';
-      phoneAfterDigits = "";
-      phoneEl.value = PHONE_PREFIX;
-      clearError();
-    }
-
-    startOrderBtn.addEventListener('click', () => {
-      showSection(formSection);
-      initPhone();
-      phoneEl.focus();
-    });
-
-    cancelBtn.addEventListener('click', () => {
-      resetForm();
-      showSection(startSection);
-    });
-
-    newOrderBtn.addEventListener('click', () => {
-      resetForm();
-      showSection(formSection);
-      initPhone();
-      phoneEl.focus();
-    });
-
-    backToStartBtn.addEventListener('click', () => showSection(startSection));
-
-    geoBtn.addEventListener('click', () => {
-      clearError();
-
-      if (!navigator.geolocation) {
-        showError('Геолокация не поддерживается на этом устройстве/вебвью.');
-        return;
-      }
-
-      geoBtn.disabled = true;
-      const oldText = geoBtn.textContent;
-      geoBtn.textContent = '...';
-
-      navigator.geolocation.getCurrentPosition(
-        (pos) => {
-          const lat = pos.coords.latitude.toFixed(6);
-          const lon = pos.coords.longitude.toFixed(6);
-          geoEl.value = `${lat}, ${lon}`;
-          geoBtn.disabled = false;
-          geoBtn.textContent = oldText;
-        },
-        () => {
-          showError('Не удалось получить геолокацию. Разрешите доступ к местоположению и попробуйте снова.');
-          geoBtn.disabled = false;
-          geoBtn.textContent = oldText;
-        },
-        { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
-      );
-    });
-
-    submitBtn.addEventListener('click', () => {
-      clearError();
-
-      const phoneDigits = ("79" + phoneAfterDigits).replace(/\D/g, "");
-
-      const payload = {
-        type: "evac_min",
-        phone: phoneDigits,
-        phoneFormatted: phoneEl.value.trim(),
-        carBrand: carBrandEl.value.trim() || null,
-        address: addressEl.value.trim() || null,
-        geo: geoEl.value.trim() || null,
-        ts: Date.now()
-      };
-
-      if (phoneDigits.length !== 11 || !phoneDigits.startsWith("79")) {
-        return showError('Введите телефон полностью в формате +7 (9XX) XXX-XX-XX');
-      }
-      if (!payload.carBrand) return showError('Укажите марку автомобиля.');
-      if (!payload.address && !payload.geo) return showError('Укажите адрес или нажмите «Определить».');
-
-      if (tg) {
-        tg.sendData(JSON.stringify(payload));
-      } else {
-        alert("Отправлено:\n" + JSON.stringify(payload, null, 2));
-      }
-
-      resetForm();
-      showSection(successSection);
-    });
-
-    // ===== Admin =====
-    const adminBtn = document.getElementById('adminBtn');
-    const adminBackBtn = document.getElementById('adminBackBtn');
-    const adminTopStatus = document.getElementById('adminTopStatus');
-
-    const adminDriversNow = document.getElementById('adminDriversNow');
-    const adminDriversRefreshBtn = document.getElementById('adminDriversRefreshBtn');
-    const adminDriversPlusBtn = document.getElementById('adminDriversPlusBtn');
-    const adminDriversMinusBtn = document.getElementById('adminDriversMinusBtn');
-    const adminDriversSet = document.getElementById('adminDriversSet');
-    const adminDriversSetBtn = document.getElementById('adminDriversSetBtn');
-    const adminDriversMsg = document.getElementById('adminDriversMsg');
-
-    const adminReqStatus = document.getElementById('adminReqStatus');
-    const adminReqLimit = document.getElementById('adminReqLimit');
-    const adminReqRefreshBtn = document.getElementById('adminReqRefreshBtn');
-    const adminReqList = document.getElementById('adminReqList');
-    const adminReqMsg = document.getElementById('adminReqMsg');
-    const adminReqOpenId = document.getElementById('adminReqOpenId');
-    const adminReqOpenBtn = document.getElementById('adminReqOpenBtn');
-
-    const adminReqDetailsCard = document.getElementById('adminReqDetailsCard');
-    const adminReqDetailsId = document.getElementById('adminReqDetailsId');
-    const adminReqDetailsText = document.getElementById('adminReqDetailsText');
-    const adminReqDetailsMsg = document.getElementById('adminReqDetailsMsg');
-
-    function showAdminButtonIfPossible() {
-      const hasApi = !!getApiUrl();
-      const inTg = !!tg;
-      adminBtn.style.display = (inTg && hasApi) ? "block" : "none";
-    }
-
-    function withInitData(path) {
-      const initData = tg?.initData || "";
-      if (!initData) return path;
-      const sep = path.includes("?") ? "&" : "?";
-      return path + sep + "tg_init_data=" + encodeURIComponent(initData);
-    }
-
-    async function apiFetch(path, opts = {}) {
-      const base = getApiBase();
-      if (!base) throw new Error("API не задан (нет параметра api в URL).");
-      if (!tg?.initData) throw new Error("Откройте внутри Telegram.");
-
-      const headers = Object.assign({ "Content-Type": "application/json" }, opts.headers || {});
-      const url = base + withInitData(path);
-
-      const res = await fetch(url, { ...opts, headers, cache: "no-store" });
-      let data = null;
-      try { data = await res.json(); } catch (e) {}
-
-      if (!res.ok) throw new Error(data?.detail || data?.error || (`HTTP ${res.status}`));
-      return data;
-    }
-
-    async function adminDriversGet() {
-      adminDriversMsg.textContent = '';
-      const apiUrl = getApiUrl();
-      if (!apiUrl) throw new Error("api не задан");
-      const r = await fetch(apiUrl, { cache: "no-store" });
-      if (!r.ok) throw new Error(`HTTP ${r.status}`);
+  async function fetchDrivers(){
+    const apiUrl = getApiUrl();
+    if (!apiUrl) return;
+    try{
+      const r = await fetch(apiUrl, { cache:"no-store" });
+      if(!r.ok) throw new Error(`HTTP ${r.status}`);
       const j = await r.json();
       const n = parseInt(j.drivers_on_line, 10);
-      const v = Number.isFinite(n) ? n : 0;
-      adminDriversNow.value = String(v);
-      adminDriversSet.value = String(v);
+      setDriversText(Number.isFinite(n) ? n : NaN);
+      driversStatusEl.textContent = "";
+    }catch(e){
+      driversStatusEl.textContent = "Не удалось обновить данные.";
     }
+  }
 
-    async function adminDriversSetValue(n) {
-      adminDriversMsg.textContent = '';
-      const data = await apiFetch("/api/admin/drivers", {
-        method: "POST",
-        body: JSON.stringify({ drivers_on_line: Math.max(0, parseInt(n, 10) || 0) })
-      });
-      adminDriversNow.value = String(data.drivers_on_line ?? 0);
-      adminDriversSet.value = String(data.drivers_on_line ?? 0);
-      adminDriversMsg.textContent = 'Сохранено.';
+  fetchDrivers();
+  setInterval(fetchDrivers, 5000);
+
+  // ==== Sections ====
+  const startSection = document.getElementById('startSection');
+  const formSection = document.getElementById('formSection');
+  const successSection = document.getElementById('successSection');
+  const adminSection = document.getElementById('adminSection');
+
+  function showSection(which){
+    [startSection, formSection, successSection, adminSection].forEach(el => el.classList.remove("active"));
+    which.classList.add("active");
+    if (tg) tg.expand();
+    clearError();
+  }
+
+  // ==== Form ====
+  const startOrderBtn = document.getElementById('startOrderBtn');
+  const cancelBtn = document.getElementById('cancelBtn');
+  const newOrderBtn = document.getElementById('newOrderBtn');
+  const backToStartBtn = document.getElementById('backToStartBtn');
+
+  const addressEl = document.getElementById('address');
+  const carBrandEl = document.getElementById('carBrand');
+  const geoEl = document.getElementById('geo');
+  const phoneEl = document.getElementById('phone');
+  const geoBtn = document.getElementById('geoBtn');
+  const submitBtn = document.getElementById('submitBtn');
+  const errorBox = document.getElementById('error');
+
+  function showError(msg){ errorBox.textContent = msg; errorBox.style.display="block"; }
+  function clearError(){ errorBox.textContent=""; errorBox.style.display="none"; }
+
+  const PHONE_PREFIX = "+7 (9";
+  let phoneAfterDigits = "";
+
+  function moveCaretToEnd(){ requestAnimationFrame(()=>{ const end=phoneEl.value.length; phoneEl.setSelectionRange(end,end); }); }
+  function formatPhoneDigits(after){
+    const d=(after||"").replace(/\D/g,"").slice(0,9);
+    const a=d.slice(0,2), b=d.slice(2,5), c=d.slice(5,7), e=d.slice(7,9);
+    let s=PHONE_PREFIX;
+    if(a.length===0) return s;
+    if(a.length===1) return s+a;
+    s+=a+")";
+    if(b.length) s+=" "+b;
+    if(c.length) s+="-"+c;
+    if(e.length) s+="-"+e;
+    return s;
+  }
+  function renderPhone(){ phoneEl.value=formatPhoneDigits(phoneAfterDigits); if(!phoneEl.value.startsWith(PHONE_PREFIX)) phoneEl.value=PHONE_PREFIX; moveCaretToEnd(); }
+  function parseAfterDigitsFromValue(v){
+    const digits=(v||"").replace(/\D/g,"");
+    let after="";
+    if(digits.startsWith("79")) after=digits.slice(2);
+    else if(digits.startsWith("7")) after=digits.slice(1);
+    else after=digits;
+    return after.slice(0,9);
+  }
+  function initPhone(){ renderPhone(); }
+
+  ["focus","click","mouseup","touchend"].forEach(evt=>{
+    phoneEl.addEventListener(evt, ()=>{
+      if(!phoneEl.value || !phoneEl.value.startsWith(PHONE_PREFIX)){ phoneAfterDigits=""; renderPhone(); }
+      else moveCaretToEnd();
+    });
+  });
+  phoneEl.addEventListener("keydown",(e)=>{
+    if(e.key==="Backspace"){
+      e.preventDefault();
+      if(phoneAfterDigits.length===0){ phoneEl.value=PHONE_PREFIX; moveCaretToEnd(); return; }
+      phoneAfterDigits=phoneAfterDigits.slice(0,-1);
+      renderPhone();
+      return;
     }
+    if(e.key==="ArrowLeft"||e.key==="Home"){ e.preventDefault(); moveCaretToEnd(); }
+  });
+  phoneEl.addEventListener("input", ()=>{ phoneAfterDigits=parseAfterDigitsFromValue(phoneEl.value); renderPhone(); });
 
-    function fmtReq(r) {
-      const created = r.created_at ? new Date(r.created_at).toLocaleString() : "";
-      const user = (r.tg_username ? ("@" + r.tg_username) : (r.tg_full_name || "—"));
-      const maps = r.yandex_link ? `\nКарта: ${r.yandex_link}` : "";
-      return `#${r.id} | ${created} | ${r.status}
+  function resetForm(){
+    addressEl.value=""; carBrandEl.value=""; geoEl.value="";
+    phoneAfterDigits=""; phoneEl.value=PHONE_PREFIX;
+    clearError();
+  }
+
+  startOrderBtn.addEventListener("click", ()=>{ showSection(formSection); initPhone(); phoneEl.focus(); });
+  cancelBtn.addEventListener("click", ()=>{ resetForm(); showSection(startSection); });
+  newOrderBtn.addEventListener("click", ()=>{ resetForm(); showSection(formSection); initPhone(); phoneEl.focus(); });
+  backToStartBtn.addEventListener("click", ()=> showSection(startSection));
+
+  geoBtn.addEventListener("click", ()=>{
+    clearError();
+    if(!navigator.geolocation) return showError("Геолокация не поддерживается.");
+    geoBtn.disabled=true; const t=geoBtn.textContent; geoBtn.textContent="...";
+    navigator.geolocation.getCurrentPosition(
+      (pos)=>{ geoEl.value = `${pos.coords.latitude.toFixed(6)}, ${pos.coords.longitude.toFixed(6)}`; geoBtn.disabled=false; geoBtn.textContent=t; },
+      ()=>{ showError("Не удалось получить геолокацию."); geoBtn.disabled=false; geoBtn.textContent=t; },
+      { enableHighAccuracy:true, timeout:10000, maximumAge:0 }
+    );
+  });
+
+  submitBtn.addEventListener("click", ()=>{
+    clearError();
+    const phoneDigits=("79"+phoneAfterDigits).replace(/\D/g,"");
+    const payload={
+      type:"evac_min",
+      phone:phoneDigits,
+      phoneFormatted: phoneEl.value.trim(),
+      carBrand: carBrandEl.value.trim() || null,
+      address: addressEl.value.trim() || null,
+      geo: geoEl.value.trim() || null,
+      ts: Date.now()
+    };
+    if(phoneDigits.length!==11 || !phoneDigits.startsWith("79")) return showError("Введите телефон полностью.");
+    if(!payload.carBrand) return showError("Укажите марку автомобиля.");
+    if(!payload.address && !payload.geo) return showError("Укажите адрес или гео.");
+    if(tg) tg.sendData(JSON.stringify(payload));
+    else alert(JSON.stringify(payload,null,2));
+    resetForm(); showSection(successSection);
+  });
+
+  // ==== Admin auth / API ====
+  const adminBtn = document.getElementById("adminBtn");
+  const adminBackBtn = document.getElementById("adminBackBtn");
+  const adminTopStatus = document.getElementById("adminTopStatus");
+
+  const adminDriversNow = document.getElementById('adminDriversNow');
+  const adminDriversRefreshBtn = document.getElementById('adminDriversRefreshBtn');
+  const adminDriversPlusBtn = document.getElementById('adminDriversPlusBtn');
+  const adminDriversMinusBtn = document.getElementById('adminDriversMinusBtn');
+  const adminDriversSet = document.getElementById('adminDriversSet');
+  const adminDriversSetBtn = document.getElementById('adminDriversSetBtn');
+  const adminDriversMsg = document.getElementById('adminDriversMsg');
+
+  const adminReqStatus = document.getElementById('adminReqStatus');
+  const adminReqLimit = document.getElementById('adminReqLimit');
+  const adminReqRefreshBtn = document.getElementById('adminReqRefreshBtn');
+  const adminReqList = document.getElementById('adminReqList');
+  const adminReqMsg = document.getElementById('adminReqMsg');
+  const adminReqOpenId = document.getElementById('adminReqOpenId');
+  const adminReqOpenBtn = document.getElementById('adminReqOpenBtn');
+
+  const adminReqDetailsCard = document.getElementById('adminReqDetailsCard');
+  const adminReqDetailsId = document.getElementById('adminReqDetailsId');
+  const adminReqDetailsText = document.getElementById('adminReqDetailsText');
+  const adminReqDetailsMsg = document.getElementById('adminReqDetailsMsg');
+
+  function authQuery(path){
+    const initData = tg?.initData || "";
+    const token = getAdminToken();
+
+    const q = [];
+    if (initData) q.push("tg_init_data=" + encodeURIComponent(initData));
+    else if (token) q.push("admin_token=" + encodeURIComponent(token));
+
+    if (!q.length) return path;
+    return path + (path.includes("?") ? "&" : "?") + q.join("&");
+  }
+
+  async function apiFetch(path, opts={}){
+    const base = getApiBase();
+    if(!base) throw new Error("API не задан (нет параметра api в URL).");
+
+    const url = base + authQuery(path);
+    const headers = Object.assign({ "Content-Type": "application/json" }, opts.headers || {});
+    const res = await fetch(url, { ...opts, headers, cache:"no-store" });
+
+    let data=null;
+    try{ data = await res.json(); }catch(e){}
+    if(!res.ok) throw new Error(data?.detail || (`HTTP ${res.status}`));
+    return data;
+  }
+
+  // Показываем админку ТОЛЬКО менеджеру:
+  async function refreshAdminVisibility(){
+    adminBtn.style.display = "none";
+    const base = getApiBase();
+    if(!base) return;
+    try{
+      await apiFetch("/api/admin/me");
+      adminBtn.style.display = "block";
+    }catch(e){
+      adminBtn.style.display = "none";
+    }
+  }
+
+  async function adminDriversGet(){
+    adminDriversMsg.textContent='';
+    const r = await fetch(getApiUrl(), { cache:"no-store" });
+    if(!r.ok) throw new Error(`HTTP ${r.status}`);
+    const j = await r.json();
+    const n = parseInt(j.drivers_on_line,10);
+    const v = Number.isFinite(n) ? n : 0;
+    adminDriversNow.value = String(v);
+    adminDriversSet.value = String(v);
+  }
+
+  async function adminDriversSetValue(n){
+    adminDriversMsg.textContent='';
+    const data = await apiFetch("/api/admin/drivers", { method:"POST", body: JSON.stringify({ drivers_on_line: Math.max(0, parseInt(n,10)||0) }) });
+    adminDriversNow.value = String(data.drivers_on_line ?? 0);
+    adminDriversSet.value = String(data.drivers_on_line ?? 0);
+    adminDriversMsg.textContent = "Сохранено.";
+    fetchDrivers(); // обновим на главной
+  }
+
+  function fmtReq(r){
+    const created = r.created_at ? new Date(r.created_at).toLocaleString() : "";
+    const user = (r.tg_username ? ("@" + r.tg_username) : (r.tg_full_name || "—"));
+    const maps = r.yandex_link ? `\nКарта: ${r.yandex_link}` : "";
+    return `#${r.id} | ${created} | ${r.status}
 Пользователь: ${user}
 Телефон: ${r.phone_formatted || r.phone || "—"}
 Марка: ${r.car_brand || "—"}
 Адрес: ${r.address || "—"}${maps}`;
+  }
+
+  async function loadRequests(){
+    adminReqMsg.textContent=""; adminReqList.innerHTML="";
+    const status = adminReqStatus.value;
+    const limit = parseInt(adminReqLimit.value||"20",10);
+
+    const q = new URLSearchParams();
+    q.set("limit", String(limit));
+    if(status) q.set("status", status);
+
+    const data = await apiFetch("/api/admin/requests?" + q.toString());
+    const items = data.items || [];
+    if(!items.length){ adminReqMsg.textContent="Заявок нет."; return; }
+
+    items.forEach(r=>{
+      const div=document.createElement("div");
+      div.className="item";
+      div.innerHTML=`
+        <div class="itemHead">
+          <div><b>#${r.id}</b><span class="pill">${r.status}</span></div>
+          <div class="hint" style="margin:0;opacity:.85;">${r.created_at?new Date(r.created_at).toLocaleString():""}</div>
+        </div>
+        <div class="mono">${fmtReq(r)}</div>
+        <div class="btnRow">
+          <button class="smallbtn primary" type="button" data-open="${r.id}">Открыть</button>
+          <button class="smallbtn" type="button" data-setst="in_work" data-id="${r.id}">В работу</button>
+          <button class="smallbtn" type="button" data-setst="done" data-id="${r.id}">Готово</button>
+          <button class="smallbtn danger" type="button" data-setst="cancel" data-id="${r.id}">Отмена</button>
+        </div>`;
+      adminReqList.appendChild(div);
+    });
+  }
+
+  async function openRequest(id){
+    adminReqDetailsMsg.textContent="";
+    const data = await apiFetch(`/api/admin/requests/${id}`);
+    const r = data.item;
+    adminReqDetailsId.textContent = `#${r.id}`;
+    adminReqDetailsText.textContent = fmtReq(r) + "\n\nPayload:\n" + JSON.stringify(r.payload_json || {}, null, 2);
+    adminReqDetailsCard.style.display="block";
+  }
+
+  async function setReqStatus(id, status){
+    await apiFetch(`/api/admin/requests/${id}/status`, { method:"POST", body: JSON.stringify({ status }) });
+  }
+
+  adminBtn.addEventListener("click", async ()=>{
+    showSection(adminSection);
+    adminTopStatus.textContent="Проверяем доступ…";
+    try{
+      await apiFetch("/api/admin/me");
+      adminTopStatus.textContent="Доступ подтверждён.";
+      await adminDriversGet();
+      await loadRequests();
+    }catch(e){
+      adminTopStatus.textContent="Нет доступа: " + e.message;
     }
+  });
 
-    async function loadRequests() {
-      adminReqMsg.textContent = "";
-      adminReqList.innerHTML = "";
+  adminBackBtn.addEventListener("click", ()=> showSection(startSection));
 
-      const status = adminReqStatus.value;
-      const limit = parseInt(adminReqLimit.value || "20", 10);
+  adminDriversRefreshBtn.addEventListener("click", async ()=>{
+    try{ await adminDriversGet(); adminDriversMsg.textContent="Обновлено."; }
+    catch(e){ adminDriversMsg.textContent="Ошибка: " + e.message; }
+  });
+  adminDriversSetBtn.addEventListener("click", async ()=>{
+    try{ await adminDriversSetValue(adminDriversSet.value); }
+    catch(e){ adminDriversMsg.textContent="Ошибка: " + e.message; }
+  });
+  adminDriversPlusBtn.addEventListener("click", async ()=>{
+    try{ const cur=parseInt(adminDriversNow.value||"0",10)||0; await adminDriversSetValue(cur+1); }
+    catch(e){ adminDriversMsg.textContent="Ошибка: " + e.message; }
+  });
+  adminDriversMinusBtn.addEventListener("click", async ()=>{
+    try{ const cur=parseInt(adminDriversNow.value||"0",10)||0; await adminDriversSetValue(Math.max(0,cur-1)); }
+    catch(e){ adminDriversMsg.textContent="Ошибка: " + e.message; }
+  });
 
-      const q = new URLSearchParams();
-      q.set("limit", String(limit));
-      if (status) q.set("status", status);
+  adminReqRefreshBtn.addEventListener("click", async ()=>{
+    try{ await loadRequests(); }
+    catch(e){ adminReqMsg.textContent="Ошибка: " + e.message; }
+  });
 
-      const data = await apiFetch("/api/admin/requests?" + q.toString());
-      const items = data.items || [];
+  adminReqOpenBtn.addEventListener("click", async ()=>{
+    const id=parseInt(adminReqOpenId.value||"",10);
+    if(!id) return;
+    try{ await openRequest(id); }
+    catch(e){ adminReqMsg.textContent="Ошибка: " + e.message; }
+  });
 
-      if (!items.length) {
-        adminReqMsg.textContent = "Заявок нет.";
-        return;
-      }
-
-      items.forEach(r => {
-        const div = document.createElement("div");
-        div.className = "item";
-        div.innerHTML = `
-          <div class="itemHead">
-            <div><b>#${r.id}</b><span class="pill">${r.status}</span></div>
-            <div class="hint" style="margin:0; opacity:.85;">${r.created_at ? new Date(r.created_at).toLocaleString() : ""}</div>
-          </div>
-          <div class="mono">${fmtReq(r)}</div>
-          <div class="btnRow">
-            <button class="smallbtn primary" type="button" data-open="${r.id}">Открыть</button>
-            <button class="smallbtn" type="button" data-setst="in_work" data-id="${r.id}">В работу</button>
-            <button class="smallbtn" type="button" data-setst="done" data-id="${r.id}">Готово</button>
-            <button class="smallbtn danger" type="button" data-setst="cancel" data-id="${r.id}">Отмена</button>
-          </div>
-        `;
-        adminReqList.appendChild(div);
-      });
+  adminReqList.addEventListener("click", async (e)=>{
+    const btn=e.target.closest("button"); if(!btn) return;
+    const openId=btn.getAttribute("data-open");
+    if(openId){ try{ await openRequest(openId); }catch(err){ adminReqMsg.textContent="Ошибка: "+err.message; } return; }
+    const st=btn.getAttribute("data-setst");
+    const id=btn.getAttribute("data-id");
+    if(st && id){
+      try{ await setReqStatus(id, st); await loadRequests(); }
+      catch(err){ adminReqMsg.textContent="Ошибка: "+err.message; }
     }
+  });
 
-    async function openRequest(id) {
-      adminReqDetailsMsg.textContent = "";
-      const data = await apiFetch(`/api/admin/requests/${id}`);
-      const r = data.item;
+  adminReqDetailsCard.addEventListener("click", async (e)=>{
+    const btn=e.target.closest("button[data-setst]"); if(!btn) return;
+    const st=btn.getAttribute("data-setst");
+    const id=(adminReqDetailsId.textContent||"").replace("#","");
+    try{ await setReqStatus(id, st); adminReqDetailsMsg.textContent="Статус обновлён: "+st; await openRequest(id); await loadRequests(); }
+    catch(err){ adminReqDetailsMsg.textContent="Ошибка: "+err.message; }
+  });
 
-      adminReqDetailsId.textContent = `#${r.id}`;
-      adminReqDetailsText.textContent =
-        fmtReq(r) + "\n\nPayload:\n" + JSON.stringify(r.payload_json || {}, null, 2);
-
-      adminReqDetailsCard.style.display = "block";
-      adminReqDetailsCard.scrollIntoView({ behavior: "smooth", block: "start" });
-    }
-
-    async function setReqStatus(id, status) {
-      await apiFetch(`/api/admin/requests/${id}/status`, {
-        method: "POST",
-        body: JSON.stringify({ status })
-      });
-    }
-
-    adminBtn.addEventListener("click", async () => {
-      showSection(adminSection);
-      adminTopStatus.textContent = "Проверяем доступ…";
-      try {
-        await apiFetch("/api/admin/me");
-        adminTopStatus.textContent = "Доступ подтверждён.";
-        await adminDriversGet();
-        await loadRequests();
-      } catch (e) {
-        adminTopStatus.textContent = "Нет доступа: " + e.message;
-      }
-    });
-
-    adminBackBtn.addEventListener("click", () => showSection(startSection));
-
-    adminDriversRefreshBtn.addEventListener("click", async () => {
-      try { await adminDriversGet(); adminDriversMsg.textContent = "Обновлено."; }
-      catch (e) { adminDriversMsg.textContent = "Ошибка: " + e.message; }
-    });
-
-    adminDriversSetBtn.addEventListener("click", async () => {
-      try { await adminDriversSetValue(adminDriversSet.value); }
-      catch (e) { adminDriversMsg.textContent = "Ошибка: " + e.message; }
-    });
-
-    adminDriversPlusBtn.addEventListener("click", async () => {
-      try {
-        const cur = parseInt(adminDriversNow.value || "0", 10) || 0;
-        await adminDriversSetValue(cur + 1);
-      } catch (e) { adminDriversMsg.textContent = "Ошибка: " + e.message; }
-    });
-
-    adminDriversMinusBtn.addEventListener("click", async () => {
-      try {
-        const cur = parseInt(adminDriversNow.value || "0", 10) || 0;
-        await adminDriversSetValue(Math.max(0, cur - 1));
-      } catch (e) { adminDriversMsg.textContent = "Ошибка: " + e.message; }
-    });
-
-    adminReqRefreshBtn.addEventListener("click", async () => {
-      try { await loadRequests(); }
-      catch (e) { adminReqMsg.textContent = "Ошибка: " + e.message; }
-    });
-
-    adminReqOpenBtn.addEventListener("click", async () => {
-      const id = parseInt(adminReqOpenId.value || "", 10);
-      if (!id) return;
-      try { await openRequest(id); }
-      catch (e) { adminReqMsg.textContent = "Ошибка: " + e.message; }
-    });
-
-    adminReqList.addEventListener("click", async (e) => {
-      const btn = e.target.closest("button");
-      if (!btn) return;
-
-      const openId = btn.getAttribute("data-open");
-      if (openId) {
-        try { await openRequest(openId); }
-        catch (err) { adminReqMsg.textContent = "Ошибка: " + err.message; }
-        return;
-      }
-
-      const st = btn.getAttribute("data-setst");
-      const id = btn.getAttribute("data-id");
-      if (st && id) {
-        try {
-          await setReqStatus(id, st);
-          await loadRequests();
-        } catch (err) {
-          adminReqMsg.textContent = "Ошибка: " + err.message;
-        }
-      }
-    });
-
-    adminReqDetailsCard.addEventListener("click", async (e) => {
-      const btn = e.target.closest("button[data-setst]");
-      if (!btn) return;
-
-      const st = btn.getAttribute("data-setst");
-      const id = (adminReqDetailsId.textContent || "").replace("#", "");
-      try {
-        await setReqStatus(id, st);
-        adminReqDetailsMsg.textContent = "Статус обновлён: " + st;
-        await openRequest(id);
-        await loadRequests();
-      } catch (err) {
-        adminReqDetailsMsg.textContent = "Ошибка: " + err.message;
-      }
-    });
-
-    // init
-    resetForm();
-    showAdminButtonIfPossible();
-  </script>
+  resetForm();
+  refreshAdminVisibility();
+</script>
 </body>
 </html>
