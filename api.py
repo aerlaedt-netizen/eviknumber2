@@ -38,10 +38,7 @@ def _parse_qs(qs: str) -> dict[str, str]:
 
 
 def _tg_webapp_check_init_data(init_data: str, bot_token: str) -> dict[str, Any]:
-    """
-    Verifies Telegram WebApp initData signature and basic expiration.
-    Returns parsed user dict.
-    """
+    """Verify Telegram WebApp initData signature and expiration. Return user dict."""
     from urllib.parse import unquote
 
     data = _parse_qs(init_data)
@@ -76,11 +73,10 @@ def _tg_webapp_check_init_data(init_data: str, bot_token: str) -> dict[str, Any]
 
 def _require_admin(init_data: str | None, admin_token: str | None) -> dict[str, Any]:
     """
-    Admin auth options:
-    1) Telegram WebApp initData (manager is TARGET_USER_ID)
-    2) Fallback API token (API_ADMIN_TOKEN), via query admin_token
+    Admin auth:
+    1) Telegram WebApp initData (manager == TARGET_USER_ID)
+    2) Fallback token API_ADMIN_TOKEN via query admin_token
     """
-    # 1) Telegram initData
     if init_data:
         if not BOT_TOKEN:
             raise HTTPException(500, "BOT_TOKEN is required for initData auth")
@@ -92,7 +88,6 @@ def _require_admin(init_data: str | None, admin_token: str | None) -> dict[str, 
             raise HTTPException(403, "Not an admin")
         return user
 
-    # 2) Fallback token
     if API_ADMIN_TOKEN and admin_token == API_ADMIN_TOKEN:
         if not TARGET_USER_ID:
             raise HTTPException(500, "TARGET_USER_ID not set")
@@ -183,7 +178,6 @@ app.add_middleware(
 )
 
 
-# --- health/root ---
 @app.get("/")
 async def root():
     return {"ok": True}
@@ -199,7 +193,6 @@ async def health():
     return {"ok": True}
 
 
-# --- public ---
 @app.get("/api/drivers")
 async def get_drivers():
     v = await _get_setting("drivers_on_line", 0)
@@ -210,7 +203,6 @@ async def get_drivers():
     return {"drivers_on_line": n}
 
 
-# --- admin (accept initData via header OR query; accept admin_token via query) ---
 @app.get("/api/admin/me")
 async def admin_me(
     x_tg_init_data: str | None = Header(default=None, alias="X-Tg-Init-Data"),
