@@ -263,6 +263,8 @@ def build_manager_panel_kb() -> InlineKeyboardMarkup:
         inline_keyboard=[
             [
                 InlineKeyboardButton(text="Заявки (последние 10)", callback_data="panel:req:10"),
+            ],
+            [
                 InlineKeyboardButton(text="Заявки (последние 20)", callback_data="panel:req:20"),
             ],
             [
