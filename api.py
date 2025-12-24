@@ -171,7 +171,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# --- Render health checks / root ---
+# Render/healthcheck helpers
 @app.get("/")
 async def root():
     return {"ok": True}
